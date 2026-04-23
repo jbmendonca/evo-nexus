@@ -197,9 +197,7 @@ class ClaudeBridge {
       // The trust prompt is auto-accepted via PTY detection below instead.
       const isRoot = process.getuid && process.getuid() === 0;
       const args = (dangerouslySkipPermissions && !isRoot) ? ['--dangerously-skip-permissions'] : [];
-      if (agent) {
-        args.push('--agent', agent);
-      }
+
 
       // For non-Anthropic providers, use --system-prompt to force agent persona.
       // --append-system-prompt is too weak — GPT models ignore appended instructions.

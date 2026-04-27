@@ -5,6 +5,8 @@ import { NotificationProvider } from './context/NotificationContext'
 import Sidebar from './components/Sidebar'
 import { FullPageLoader, SectionBoundary, SectionLoader } from './components/PageStates'
 import { lazyDefault, lazyNamed } from './lib/lazyImport'
+import { ThemeProvider } from './context/ThemeContext'
+import { CommandPaletteProvider } from './components/CommandPalette'
 
 const Setup = lazyDefault(() => import('./pages/Setup'))
 const Login = lazyDefault(() => import('./pages/Login'))
@@ -23,6 +25,7 @@ const Scheduler = lazyDefault(() => import('./pages/Scheduler'))
 const Tasks = lazyDefault(() => import('./pages/Tasks'))
 const Memory = lazyDefault(() => import('./pages/Memory'))
 const Systems = lazyDefault(() => import('./pages/Systems'))
+const Observability = lazyDefault(() => import('./pages/Observability'))
 const Users = lazyDefault(() => import('./pages/Users'))
 const Audit = lazyDefault(() => import('./pages/Audit'))
 const Roles = lazyDefault(() => import('./pages/Roles'))
@@ -30,6 +33,7 @@ const MemPalace = lazyDefault(() => import('./pages/MemPalace'))
 const Triggers = lazyDefault(() => import('./pages/Triggers'))
 const Backups = lazyDefault(() => import('./pages/Backups'))
 const Providers = lazyDefault(() => import('./pages/Providers'))
+const Plugins = lazyDefault(() => import('./pages/Plugins'))
 const Workspace = lazyDefault(() => import('./pages/Workspace'))
 const Settings = lazyDefault(() => import('./pages/Settings'))
 const ShareLinks = lazyDefault(() => import('./pages/ShareLinks'))
@@ -61,7 +65,7 @@ function FullPageRoute({
   children: ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-[#0C111D]">
+    <div className="min-h-screen bg-[var(--bg-primary)]">
       <SectionBoundary key={locationKey} sectionName={sectionName}>
         <Suspense fallback={<FullPageLoader label={`Loading ${sectionName}...`} />}>
           {children}
@@ -149,73 +153,80 @@ function AppContent() {
 
   return (
     <NotificationProvider>
-      <div className="flex min-h-screen bg-[#0C111D]">
-        <Sidebar />
+      <ThemeProvider>
+        <CommandPaletteProvider>
+          <div className="flex min-h-screen bg-[var(--bg-primary)]">
+            <Sidebar />
 
-        {/* Pages - responsive margin */}
-        <main
-          className={
-            isAgentDetail || isWorkspace || isTicketDetail
-              ? 'flex-1 ml-0 lg:ml-60 pt-14 lg:pt-0 h-screen overflow-hidden'
-              : 'flex-1 ml-0 lg:ml-60 p-4 lg:p-8 pt-16 lg:pt-8 overflow-auto'
-          }
-        >
-          <DashboardRouteFrame locationKey={routeKey}>
-            <Routes>
-              <Route path="/" element={<Overview />} />
-              <Route path="/workspace/*" element={<Workspace />} />
-              <Route path="/agents" element={<Agents />} />
-              <Route path="/agents/:name" element={<AgentDetail />} />
-              <Route path="/routines" element={<Routines />} />
-              {hasPermission('scheduler', 'view') && <Route path="/activity" element={<Activity />} />}
-              <Route path="/tasks" element={<Tasks />} />
-              {hasPermission('triggers', 'view') && <Route path="/triggers" element={<Triggers />} />}
-              <Route path="/skills" element={<Skills />} />
-              <Route path="/skills/:name" element={<SkillDetail />} />
-              <Route path="/costs" element={<Costs />} />
-              <Route path="/integrations" element={<Integrations />} />
-              <Route path="/templates" element={<Templates />} />
-              <Route path="/scheduler" element={<Scheduler />} />
-              {hasPermission('heartbeats', 'view') && <Route path="/heartbeats" element={<HeartbeatsList />} />}
-              {hasPermission('heartbeats', 'view') && <Route path="/heartbeats/:id" element={<HeartbeatDetail />} />}
-              <Route path="/memory" element={<Memory />} />
-              <Route path="/mempalace" element={<MemPalace />} />
-              <Route path="/systems" element={<Systems />} />
-              {hasPermission('config', 'view') && <Route path="/settings" element={<Settings />} />}
-              {hasPermission('config', 'view') && <Route path="/backups" element={<Backups />} />}
-              <Route path="/config" element={<Navigate to="/settings" replace />} />
-              <Route path="/providers" element={<Providers />} />
-              {hasPermission('users', 'view') && <Route path="/users" element={<Users />} />}
-              {hasPermission('audit', 'view') && <Route path="/audit" element={<Audit />} />}
-              {hasPermission('users', 'manage') && <Route path="/roles" element={<Roles />} />}
-              {hasPermission('workspace', 'manage') && <Route path="/shares" element={<ShareLinks />} />}
-              <Route path="/goals" element={<Goals />} />
-              {hasPermission('tickets', 'view') && <Route path="/topics" element={<Topics />} />}
-              {hasPermission('tickets', 'view') && <Route path="/issues" element={<Navigate to="/topics" replace />} />}
-              {hasPermission('tickets', 'view') && <Route path="/tickets/:id" element={<TicketDetail />} />}
-              {hasPermission('knowledge', 'view') && (
-                <>
-                  {/* Top-level Knowledge shell: only Connections + Settings */}
-                  <Route path="/knowledge" element={<KnowledgeLayout />}>
-                    <Route index element={<KnowledgeConnections />} />
-                    <Route path="settings" element={<KnowledgeSettings />} />
-                  </Route>
-                  {/* Per-connection scope: tabs appear only inside a connection */}
-                  <Route path="/knowledge/connections/:id" element={<ConnectionLayout />}>
-                    <Route index element={<ConnectionDetail />} />
-                    <Route path="spaces" element={<KnowledgeSpaces />} />
-                    <Route path="units" element={<KnowledgeUnits />} />
-                    <Route path="upload" element={<KnowledgeUpload />} />
-                    <Route path="browse" element={<KnowledgeBrowse />} />
-                    <Route path="search" element={<KnowledgeSearch />} />
-                    <Route path="api-keys" element={<KnowledgeApiKeys />} />
-                  </Route>
-                </>
-              )}
-            </Routes>
-          </DashboardRouteFrame>
-        </main>
-      </div>
+            {/* Pages - responsive margin */}
+            <main
+              className={
+                isAgentDetail || isWorkspace || isTicketDetail
+                  ? 'flex-1 ml-0 lg:ml-60 pt-14 lg:pt-0 h-screen overflow-hidden'
+                  : 'flex-1 ml-0 lg:ml-60 p-4 lg:p-8 pt-16 lg:pt-8 overflow-auto'
+              }
+            >
+              <DashboardRouteFrame locationKey={routeKey}>
+                <Routes>
+                  <Route path="/login" element={<Navigate to="/providers" replace />} />
+                  <Route path="/" element={<Overview />} />
+                  <Route path="/workspace/*" element={<Workspace />} />
+                  <Route path="/agents" element={<Agents />} />
+                  <Route path="/agents/:name" element={<AgentDetail />} />
+                  <Route path="/routines" element={<Routines />} />
+                  {hasPermission('scheduler', 'view') && <Route path="/activity" element={<Activity />} />}
+                  <Route path="/tasks" element={<Tasks />} />
+                  {hasPermission('triggers', 'view') && <Route path="/triggers" element={<Triggers />} />}
+                  <Route path="/skills" element={<Skills />} />
+                  <Route path="/skills/:name" element={<SkillDetail />} />
+                  <Route path="/costs" element={<Costs />} />
+                  <Route path="/integrations" element={<Integrations />} />
+                  <Route path="/templates" element={<Templates />} />
+                  <Route path="/scheduler" element={<Scheduler />} />
+                  {hasPermission('heartbeats', 'view') && <Route path="/heartbeats" element={<HeartbeatsList />} />}
+                  {hasPermission('heartbeats', 'view') && <Route path="/heartbeats/:id" element={<HeartbeatDetail />} />}
+                  <Route path="/memory" element={<Memory />} />
+                  <Route path="/mempalace" element={<MemPalace />} />
+                  <Route path="/systems" element={<Systems />} />
+                  {hasPermission('systems', 'view') && <Route path="/observability" element={<Observability />} />}
+                  {hasPermission('config', 'view') && <Route path="/settings" element={<Settings />} />}
+                  {hasPermission('config', 'view') && <Route path="/backups" element={<Backups />} />}
+                  <Route path="/config" element={<Navigate to="/settings" replace />} />
+                  <Route path="/providers" element={<Providers />} />
+                  {hasPermission('config', 'view') && <Route path="/plugins" element={<Plugins />} />}
+                  {hasPermission('users', 'view') && <Route path="/users" element={<Users />} />}
+                  {hasPermission('audit', 'view') && <Route path="/audit" element={<Audit />} />}
+                  {hasPermission('users', 'manage') && <Route path="/roles" element={<Roles />} />}
+                  {hasPermission('workspace', 'manage') && <Route path="/shares" element={<ShareLinks />} />}
+                  <Route path="/goals" element={<Goals />} />
+                  {hasPermission('tickets', 'view') && <Route path="/topics" element={<Topics />} />}
+                  {hasPermission('tickets', 'view') && <Route path="/issues" element={<Navigate to="/topics" replace />} />}
+                  {hasPermission('tickets', 'view') && <Route path="/tickets/:id" element={<TicketDetail />} />}
+                  {hasPermission('knowledge', 'view') && (
+                    <>
+                      {/* Top-level Knowledge shell: only Connections + Settings */}
+                      <Route path="/knowledge" element={<KnowledgeLayout />}>
+                        <Route index element={<KnowledgeConnections />} />
+                        <Route path="settings" element={<KnowledgeSettings />} />
+                      </Route>
+                      {/* Per-connection scope: tabs appear only inside a connection */}
+                      <Route path="/knowledge/connections/:id" element={<ConnectionLayout />}>
+                        <Route index element={<ConnectionDetail />} />
+                        <Route path="spaces" element={<KnowledgeSpaces />} />
+                        <Route path="units" element={<KnowledgeUnits />} />
+                        <Route path="upload" element={<KnowledgeUpload />} />
+                        <Route path="browse" element={<KnowledgeBrowse />} />
+                        <Route path="search" element={<KnowledgeSearch />} />
+                        <Route path="api-keys" element={<KnowledgeApiKeys />} />
+                      </Route>
+                    </>
+                  )}
+                </Routes>
+              </DashboardRouteFrame>
+            </main>
+          </div>
+        </CommandPaletteProvider>
+      </ThemeProvider>
     </NotificationProvider>
   )
 }

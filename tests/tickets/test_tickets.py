@@ -24,6 +24,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_DIR = REPO_ROOT / "dashboard" / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
+XHR_HEADERS = {"X-Requested-With": "XMLHttpRequest"}
+
 
 # ---------------------------------------------------------------------------
 # Fixture: in-memory Flask app with tickets tables
@@ -84,8 +86,12 @@ def app():
 @pytest.fixture
 def client(app):
     with app.test_client() as c:
-        # Log in as admin
-        c.post("/api/auth/login", json={"username": "admin", "password": "password"})
+        with app.app_context():
+            from models import User
+            admin = User.query.filter_by(username="admin").first()
+            with c.session_transaction() as sess:
+                sess["_user_id"] = str(admin.id)
+                sess["_fresh"] = True
         yield c
 
 
@@ -409,6 +415,7 @@ class TestTicketCRUD:
             "/api/tickets",
             json={"title": "Test ticket from pytest", "priority": "high"},
             content_type="application/json",
+            headers=XHR_HEADERS,
         )
         assert resp.status_code in (201, 401), f"Got {resp.status_code}: {resp.data}"
 
@@ -481,7 +488,7 @@ class TestModelsRegression:
         from models import TICKET_STATUSES
         assert "open" in TICKET_STATUSES
         assert "closed" in TICKET_STATUSES
-        assert len(TICKET_STATUSES) == 6
+        assert len(TICKET_STATUSES) == 7
 
     def test_ticket_priorities_constant(self):
         from models import TICKET_PRIORITIES

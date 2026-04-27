@@ -17,6 +17,9 @@ from typing import Dict, Optional, Tuple
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from db_compat import connect_dashboard_db
+from runtime_config import database_uri as resolve_database_uri
+
 # ---------------------------------------------------------------------------
 # Internal state
 # ---------------------------------------------------------------------------
@@ -39,17 +42,20 @@ _gc_lock = threading.Lock()
 
 def _create_engine_for(connection_string: str) -> Engine:
     """Create a new SQLAlchemy engine with Knowledge-tuned pool settings (ADR-004)."""
-    return create_engine(
-        connection_string,
-        pool_size=3,
-        max_overflow=2,
-        pool_recycle=1800,
-        pool_pre_ping=True,
-        connect_args={
-            "connect_timeout": 10,
-            "application_name": "evonexus-knowledge",
-        },
-    )
+    kwargs = {
+        "pool_pre_ping": True,
+    }
+    if not connection_string.startswith("sqlite"):
+        kwargs.update({
+            "pool_size": 3,
+            "max_overflow": 2,
+            "pool_recycle": 1800,
+            "connect_args": {
+                "connect_timeout": 10,
+                "application_name": "evonexus-knowledge",
+            },
+        })
+    return create_engine(connection_string, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -126,36 +132,8 @@ def start_gc_thread() -> None:
 # ---------------------------------------------------------------------------
 
 def _resolve_sqlite_db_path() -> str:
-    """Locate the EvoNexus SQLite DB, in order of preference.
-
-    1. Flask current_app.config["SQLALCHEMY_DATABASE_URI"] (the real source)
-    2. SQLALCHEMY_DATABASE_URI env var (dev/test override)
-    3. Derived from workspace root: <workspace>/dashboard/data/evonexus.db
-
-    Always returns an absolute filesystem path (not a sqlite:// URI).
-    """
-    import os
-    from pathlib import Path
-
-    # 1. Flask app config — authoritative when running inside a request.
-    try:
-        from flask import current_app
-        uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
-        if uri:
-            return uri.replace("sqlite:///", "")
-    except RuntimeError:
-        # Outside Flask app context (CLI, worker) — fall through.
-        pass
-
-    # 2. Env var override.
-    uri = os.environ.get("SQLALCHEMY_DATABASE_URI", "")
-    if uri:
-        return uri.replace("sqlite:///", "")
-
-    # 3. Derive from this file's location:
-    # dashboard/backend/knowledge/connection_pool.py → workspace/dashboard/data/evonexus.db
-    workspace = Path(__file__).resolve().parent.parent.parent.parent
-    return str(workspace / "dashboard" / "data" / "evonexus.db")
+    """Locate the EvoNexus dashboard database URI."""
+    return resolve_database_uri()
 
 
 def get_dsn(connection_id: str) -> str:
@@ -167,12 +145,10 @@ def get_dsn(connection_id: str) -> str:
     Raises ``KeyError`` if the connection is not found.
     Raises ``ValueError`` if no connection string is stored for this connection.
     """
-    import sqlite3
-
     from knowledge.crypto import decrypt_secret
 
-    db_path = _resolve_sqlite_db_path()
-    conn = sqlite3.connect(db_path)
+    db_uri = _resolve_sqlite_db_path()
+    conn = connect_dashboard_db(db_uri)
     try:
         row = conn.execute(
             "SELECT connection_string_encrypted FROM knowledge_connections WHERE id = ? OR slug = ?",

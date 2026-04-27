@@ -24,6 +24,10 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = db.Column(db.DateTime)
+    totp_secret = db.Column(db.String(255))
+    totp_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    totp_last_used_step = db.Column(db.Integer)
+    totp_confirmed_at = db.Column(db.DateTime)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
     def set_password(self, password: str):
@@ -31,6 +35,18 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password: str) -> bool:
         return bcrypt.checkpw(password.encode(), self.password_hash.encode())
+
+    def enable_totp(self, secret: str, last_used_step: int | None = None):
+        self.totp_secret = secret
+        self.totp_enabled = True
+        self.totp_last_used_step = last_used_step
+        self.totp_confirmed_at = datetime.now(timezone.utc)
+
+    def disable_totp(self):
+        self.totp_secret = None
+        self.totp_enabled = False
+        self.totp_last_used_step = None
+        self.totp_confirmed_at = None
 
     def to_dict(self):
         return {
@@ -43,6 +59,8 @@ class User(UserMixin, db.Model):
             "is_active": self.is_active,
             "created_at": self.created_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if self.created_at else None,
             "last_login": self.last_login.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if self.last_login else None,
+            "totp_enabled": bool(self.totp_enabled and self.totp_secret),
+            "totp_confirmed_at": self.totp_confirmed_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if self.totp_confirmed_at else None,
         }
 
 
@@ -762,7 +780,7 @@ class Ticket(db.Model):
     __tablename__ = "tickets"
     __table_args__ = (
         db.CheckConstraint(
-            "status IN ('open','in_progress','blocked','review','resolved','closed')",
+            "status IN ('open','in_progress','blocked','review','resolved','closed','archived')",
             name="ck_ticket_status",
         ),
         db.CheckConstraint(

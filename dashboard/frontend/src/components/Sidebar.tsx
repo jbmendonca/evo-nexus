@@ -2,12 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
+import { useCommandPalette } from './CommandPalette'
 import NotificationBell from './NotificationBell'
+import { DOCS_NAV_ITEM, getVisibleNavGroups, type NavGroup, type NavItem } from '../lib/navigation'
 import {
-  LayoutDashboard, Bot, Clock, Zap, Layout, Calendar, CalendarClock,
-  Brain, Plug, DollarSign, FolderOpen, Cpu,
-  Monitor, Users, ScrollText, LogOut, Menu, X, Shield, BookOpen, Library, Database,
-  ArrowUpCircle, ChevronDown, Webhook, HardDriveDownload, Settings, Share2, Heart, Target, Ticket, Activity,
+  ArrowUpCircle,
+  ChevronDown,
+  LogOut,
+  Menu,
+  Moon,
+  Search,
+  Sun,
+  X,
 } from 'lucide-react'
 
 interface VersionInfo {
@@ -17,81 +24,6 @@ interface VersionInfo {
   release_url: string | null
   release_notes: string | null
 }
-
-interface NavItem {
-  to: string
-  labelKey: string           // i18n key under nav.*
-  icon: React.ComponentType<{ size?: number }>
-  resource: string | null
-  desktopOnly?: boolean
-}
-
-interface NavGroup {
-  key: string                // i18n key under nav.groups.*  (also used as storage key)
-  collapsible: boolean
-  adminOnly?: boolean
-  items: NavItem[]
-}
-
-const navGroups: NavGroup[] = [
-  {
-    key: 'main',
-    collapsible: false,
-    items: [
-      { to: '/', labelKey: 'overview', icon: LayoutDashboard, resource: null },
-    ],
-  },
-  {
-    key: 'operations',
-    collapsible: true,
-    items: [
-      { to: '/agents', labelKey: 'agents', icon: Bot, resource: 'agents' },
-      { to: '/skills', labelKey: 'skills', icon: Zap, resource: 'skills' },
-      { to: '/routines', labelKey: 'routines', icon: Clock, resource: 'routines' },
-      { to: '/tasks', labelKey: 'tasks', icon: CalendarClock, resource: 'tasks' },
-      { to: '/triggers', labelKey: 'triggers', icon: Webhook, resource: 'triggers' },
-      { to: '/heartbeats', labelKey: 'heartbeats', icon: Heart, resource: 'heartbeats' },
-      { to: '/activity', labelKey: 'activity', icon: Activity, resource: 'scheduler' },
-      { to: '/goals', labelKey: 'goals', icon: Target, resource: 'goals' },
-      { to: '/topics', labelKey: 'issues', icon: Ticket, resource: 'tickets' },
-      { to: '/templates', labelKey: 'templates', icon: Layout, resource: 'templates' },
-    ],
-  },
-  {
-    key: 'data',
-    collapsible: true,
-    items: [
-      { to: '/workspace', labelKey: 'workspace', icon: FolderOpen, resource: 'workspace' },
-      { to: '/shares', labelKey: 'shareLinks', icon: Share2, resource: 'workspace' },
-      { to: '/memory', labelKey: 'memory', icon: Brain, resource: 'memory' },
-      { to: '/mempalace', labelKey: 'mempalace', icon: Library, resource: 'mempalace' },
-      { to: '/knowledge', labelKey: 'knowledge', icon: Database, resource: 'knowledge' },
-      { to: '/costs', labelKey: 'costs', icon: DollarSign, resource: 'costs' },
-    ],
-  },
-  {
-    key: 'system',
-    collapsible: true,
-    items: [
-      { to: '/settings', labelKey: 'settings', icon: Settings, resource: 'config' },
-      { to: '/systems', labelKey: 'systems', icon: Monitor, resource: 'systems' },
-      { to: '/providers', labelKey: 'providers', icon: Cpu, resource: 'config' },
-      { to: '/integrations', labelKey: 'integrations', icon: Plug, resource: 'integrations' },
-      { to: '/scheduler', labelKey: 'scheduler', icon: Calendar, resource: 'scheduler' },
-      { to: '/backups', labelKey: 'backups', icon: HardDriveDownload, resource: 'config' },
-    ],
-  },
-  {
-    key: 'admin',
-    collapsible: true,
-    adminOnly: true,
-    items: [
-      { to: '/users', labelKey: 'users', icon: Users, resource: 'users' },
-      { to: '/roles', labelKey: 'roles', icon: Shield, resource: 'users' },
-      { to: '/audit', labelKey: 'audit', icon: ScrollText, resource: 'audit' },
-    ],
-  },
-]
 
 const STORAGE_KEY = 'sidebar-collapsed-groups'
 
@@ -117,10 +49,13 @@ const roleBadgeClass: Record<string, string> = {
 
 export default function Sidebar() {
   const { user, logout, hasPermission } = useAuth()
+  const { theme, toggleTheme } = useTheme()
+  const { openCommandPalette } = useCommandPalette()
   const { t } = useTranslation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsedState)
+  const visibleGroups = getVisibleNavGroups(hasPermission)
 
   useEffect(() => {
     fetch('/api/version/check')
@@ -145,8 +80,6 @@ export default function Sidebar() {
       onClick={() => setMobileOpen(false)}
       className={({ isActive }) =>
         `items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-          item.desktopOnly ? 'hidden lg:flex' : 'flex'
-        } ${
           isActive
             ? 'text-[#00FFA7] bg-[#00FFA7]/10 border-l-2 border-[#00FFA7]'
             : 'text-[#667085] hover:text-[#D0D5DD] hover:bg-white/5 border-l-2 border-transparent'
@@ -159,21 +92,6 @@ export default function Sidebar() {
   )
 
   const renderGroup = (group: NavGroup) => {
-    // Filter items by permission
-    const visibleItems = group.items.filter(
-      (item) => item.resource === null || hasPermission(item.resource, 'view')
-    )
-
-    if (visibleItems.length === 0) return null
-
-    // Admin group: only show if user has permission to view at least one admin item
-    if (group.adminOnly) {
-      const hasAnyAdmin = group.items.some((item) =>
-        item.resource && hasPermission(item.resource, 'view')
-      )
-      if (!hasAnyAdmin) return null
-    }
-
     const isCollapsed = collapsed[group.key] ?? false
 
     return (
@@ -181,9 +99,9 @@ export default function Sidebar() {
         {group.collapsible ? (
           <button
             onClick={() => toggleGroup(group.key)}
-            className="w-full flex items-center justify-between px-3 py-1.5 mt-2 group cursor-pointer"
+            className="group mt-2 flex w-full cursor-pointer items-center justify-between px-3 py-1.5"
           >
-            <span className="text-[10px] uppercase tracking-wider text-[#667085] font-semibold select-none">
+            <span className="select-none text-[10px] font-semibold uppercase tracking-wider text-[#667085]">
               {t(`nav.groups.${group.key}`)}
             </span>
             <ChevronDown
@@ -195,7 +113,7 @@ export default function Sidebar() {
           </button>
         ) : (
           <div className="px-3 py-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-[#667085] font-semibold">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#667085]">
               {t(`nav.groups.${group.key}`)}
             </span>
           </div>
@@ -207,7 +125,7 @@ export default function Sidebar() {
           }`}
         >
           <div className="flex flex-col gap-0.5">
-            {visibleItems.map(renderLink)}
+            {group.items.map(renderLink)}
           </div>
         </div>
       </div>
@@ -216,23 +134,41 @@ export default function Sidebar() {
 
   const sidebarContent = (
     <>
-      <div className="px-5 py-6 flex items-center justify-between">
+      <div className="flex items-center justify-between px-5 py-6">
         <img src="/EVO_NEXUS.webp" alt="EvoNexus" className="h-8 w-auto" />
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => openCommandPalette()}
+            className="hidden rounded p-1.5 text-[#667085] transition-colors hover:bg-white/10 hover:text-[#D0D5DD] lg:inline-flex"
+            title="Search (Ctrl+K)"
+          >
+            <Search size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="rounded p-1.5 text-[#667085] transition-colors hover:bg-white/10 hover:text-[#D0D5DD]"
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           <NotificationBell />
-          <button onClick={() => setMobileOpen(false)} className="lg:hidden p-1 rounded hover:bg-white/10 text-[#667085]">
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="rounded p-1 text-[#667085] hover:bg-white/10 lg:hidden"
+          >
             <X size={20} />
           </button>
         </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {navGroups.map(renderGroup)}
+        {visibleGroups.map(renderGroup)}
 
-        {/* Docs link — standalone at the bottom of nav */}
         <div className="mt-2">
           <NavLink
-            to="/docs"
+            to={DOCS_NAV_ITEM.to}
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -242,27 +178,31 @@ export default function Sidebar() {
               }`
             }
           >
-            <BookOpen size={16} />
+            <DOCS_NAV_ITEM.icon size={16} />
             {t('nav.docs')}
           </NavLink>
         </div>
       </nav>
 
       {user && (
-        <div className="px-4 py-4 border-t border-[#344054]">
+        <div className="border-t border-[#344054] px-4 py-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#00FFA7]/20 text-[#00FFA7] flex items-center justify-center text-sm font-bold shrink-0">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00FFA7]/20 text-sm font-bold text-[#00FFA7]">
               {(user.display_name || user.username).charAt(0).toUpperCase()}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-white font-medium truncate">{user.display_name || user.username}</p>
-              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${roleBadgeClass[user.role] || roleBadgeClass.viewer}`}>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">{user.display_name || user.username}</p>
+              <span
+                className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                  roleBadgeClass[user.role] || roleBadgeClass.viewer
+                }`}
+              >
                 {user.role}
               </span>
             </div>
             <button
               onClick={logout}
-              className="p-1.5 rounded-lg text-[#667085] hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+              className="shrink-0 rounded-lg p-1.5 text-[#667085] transition-colors hover:bg-red-500/10 hover:text-red-400"
               title={t('nav.logout')}
             >
               <LogOut size={16} />
@@ -271,9 +211,8 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Version indicator */}
       {versionInfo && (
-        <div className="px-4 py-2 border-t border-[#344054]/50">
+        <div className="border-t border-[#344054]/50 px-4 py-2">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-[#667085]">v{versionInfo.current}</span>
             {versionInfo.update_available && versionInfo.release_url && (
@@ -281,7 +220,7 @@ export default function Sidebar() {
                 href={versionInfo.release_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[#00FFA7] hover:text-[#00FFA7]/80 transition-colors"
+                className="flex items-center gap-1 text-[#00FFA7] transition-colors hover:text-[#00FFA7]/80"
                 title={t('nav.updateAvailable', { version: versionInfo.latest })}
               >
                 <ArrowUpCircle size={12} />
@@ -292,13 +231,12 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Credits */}
-      <div className="px-4 py-3 border-t border-[#344054]/50">
+      <div className="border-t border-[#344054]/50 px-4 py-3">
         <a
           href="https://evolutionfoundation.com.br"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-1.5 text-[10px] text-[#667085] hover:text-[#00FFA7] transition-colors"
+          className="flex items-center justify-center gap-1.5 text-[10px] text-[#667085] transition-colors hover:text-[#00FFA7]"
         >
           by <span className="font-semibold text-[#00FFA7]/60">Evolution Foundation</span>
         </a>
@@ -308,28 +246,28 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-50 lg:hidden p-2 rounded-lg bg-[#182230] border border-[#344054] text-[#D0D5DD] hover:text-[#00FFA7] transition-colors"
+        className="fixed left-4 top-4 z-50 rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-card)] p-2 text-[color:var(--text-secondary)] transition-colors hover:text-[#00FFA7] lg:hidden"
       >
         <Menu size={20} />
       </button>
 
-      {/* Mobile overlay */}
       {mobileOpen && (
-        <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setMobileOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setMobileOpen(false)} />
       )}
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed left-0 top-0 bottom-0 w-60 bg-[#0a0f1a] border-r border-[#344054] flex flex-col z-50
-        transition-transform duration-200 ease-in-out
-        lg:translate-x-0
-        ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
+      <aside
+        className={`
+          fixed bottom-0 left-0 top-0 z-50 flex w-60 flex-col border-r border-[#344054]
+          bg-[color:var(--bg-sidebar)] transition-transform duration-200 ease-in-out
+          lg:translate-x-0
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+      >
         {sidebarContent}
       </aside>
     </>
   )
 }
+

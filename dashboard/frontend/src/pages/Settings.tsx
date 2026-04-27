@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import Markdown from '../components/Markdown'
+import SecurityTab from './SettingsSecurityTab'
 
 // ── Toggle (copied from Providers.tsx) ─────────────────────────────────────
 function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -720,11 +721,12 @@ const TABS = [
   { key: 'workspace', labelKey: 'settings.tabs.workspace' },
   { key: 'routines', labelKey: 'settings.tabs.routines' },
   { key: 'notifications', labelKey: 'settings.tabs.notifications' },
+  { key: 'security', labelKey: 'settings.tabs.security' },
   { key: 'trust', labelKey: 'settings.tabs.trust' },
   { key: 'reference', labelKey: 'settings.tabs.reference' },
 ] as const
 
-type TabKey = 'workspace' | 'routines' | 'notifications' | 'trust' | 'reference'
+type TabKey = 'workspace' | 'routines' | 'notifications' | 'security' | 'trust' | 'reference'
 
 export default function Settings() {
   const { t } = useTranslation()
@@ -765,6 +767,7 @@ export default function Settings() {
       {activeTab === 'workspace' && <WorkspaceTab showToast={showToast} />}
       {activeTab === 'routines' && <RoutinesTab showToast={showToast} />}
       {activeTab === 'notifications' && <NotificationsTab />}
+      {activeTab === 'security' && <SecurityTab showToast={showToast} />}
       {activeTab === 'trust' && <TrustTab showToast={showToast} />}
       {activeTab === 'reference' && <ReferenceTab />}
 

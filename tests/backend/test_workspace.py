@@ -17,6 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_DIR = REPO_ROOT / "dashboard" / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
+XHR_HEADERS = {"X-Requested-With": "XMLHttpRequest"}
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -352,6 +354,7 @@ class TestWorkspaceEndpoints:
             "/api/workspace/file",
             json={"path": "workspace/hello.md", "content": "# Hello"},
             content_type="application/json",
+            headers=XHR_HEADERS,
         )
         assert resp.status_code == 200
         data = resp.get_json()
@@ -365,14 +368,17 @@ class TestWorkspaceEndpoints:
             json={"path": "workspace/hello.md", "content": "x"},
             content_type="application/json",
         )
-        assert resp.status_code == 401
+        assert resp.status_code in (401, 403)
 
     def test_delete_moves_to_trash(self, admin_client, tmp_workspace):
         """DELETE /api/workspace/file soft-deletes file to .trash/."""
         target = tmp_workspace / "to_delete.md"
         target.write_text("bye")
 
-        resp = admin_client.delete("/api/workspace/file?path=workspace/to_delete.md")
+        resp = admin_client.delete(
+            "/api/workspace/file?path=workspace/to_delete.md",
+            headers=XHR_HEADERS,
+        )
         assert resp.status_code == 200
         data = resp.get_json()
         assert "trashed_to" in data
@@ -395,6 +401,7 @@ class TestWorkspaceEndpoints:
             "/api/workspace/rename",
             json={"from": "workspace/a/file.md", "to": "workspace/b/file.md"},
             content_type="application/json",
+            headers=XHR_HEADERS,
         )
         assert resp.status_code == 400
         data = resp.get_json()

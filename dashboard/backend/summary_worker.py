@@ -17,6 +17,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from db_compat import connect_dashboard_db
+
 WORKSPACE = Path(__file__).resolve().parent.parent.parent.parent
 SUMMARY_CHUNK_TURNS = 20          # matches SUMMARY_EVERY_N in tickets.py
 LOGS_DIR = WORKSPACE / "ADWs" / "logs" / "chat"
@@ -28,16 +30,10 @@ def _now_iso() -> str:
 
 def _find_jsonl(ticket_id: str) -> Path | None:
     """Find the JSONL for the ticket's thread_session_id via DB lookup."""
-    import sqlite3
-    db_path = WORKSPACE / "dashboard" / "data" / "evonexus.db"
-    if not db_path.exists():
-        print(f"[summary_worker] DB not found: {db_path}", flush=True)
-        return None
-    conn = sqlite3.connect(str(db_path))
-    row = conn.execute(
-        "SELECT thread_session_id, assignee_agent FROM tickets WHERE id = ?", (ticket_id,)
-    ).fetchone()
-    conn.close()
+    with connect_dashboard_db(timeout=30) as conn:
+        row = conn.execute(
+            "SELECT thread_session_id, assignee_agent FROM tickets WHERE id = ?", (ticket_id,)
+        ).fetchone()
     if not row or not row[0]:
         print(f"[summary_worker] No thread_session_id for ticket {ticket_id}", flush=True)
         return None
@@ -147,11 +143,8 @@ def run_summary(ticket_id: str, memory_md_path: str, up_to_turn: int) -> bool:
         return False
 
     # Get ticket title from DB
-    import sqlite3
-    db_path = WORKSPACE / "dashboard" / "data" / "evonexus.db"
-    conn = sqlite3.connect(str(db_path))
-    row = conn.execute("SELECT title FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
-    conn.close()
+    with connect_dashboard_db(timeout=30) as conn:
+        row = conn.execute("SELECT title FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
     ticket_title = row[0] if row else ticket_id
 
     jsonl_path = _find_jsonl(ticket_id)

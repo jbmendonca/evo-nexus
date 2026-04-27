@@ -27,7 +27,9 @@ from pathlib import Path
 from flask import Blueprint, abort, current_app, jsonify, request
 from flask_login import current_user
 
+from db_compat import connect_dashboard_db
 from models import audit
+from request_security import require_xhr
 from routes.auth_routes import require_permission
 
 log = logging.getLogger(__name__)
@@ -52,11 +54,7 @@ def _require_xhr() -> None:
     Exempted: requests carrying a Bearer token (DASHBOARD_API_TOKEN path) because
     those are already pre-shared-secret auth, not session-cookie auth.
     """
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        return  # Bearer-authenticated calls are not session-rider candidates
-    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
-        abort(403, description="CSRF check failed: X-Requested-With header missing.")
+    require_xhr(request)
 
 _EMBEDDER_DEFAULTS = {
     "local": {
@@ -112,10 +110,8 @@ def _db_path() -> str:
     return current_app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
 
 
-def _get_sqlite() -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path())
-    conn.row_factory = sqlite3.Row
-    return conn
+def _get_sqlite():
+    return connect_dashboard_db(_db_path())
 
 
 def _assert_key():
@@ -469,7 +465,7 @@ def _current_settings() -> dict:
             locked = bool(row and row[0] > 0)
         finally:
             conn.close()
-    except sqlite3.Error:
+    except Exception:
         locked = False
 
     openai_key_set = bool(_read_env_clean("OPENAI_API_KEY"))

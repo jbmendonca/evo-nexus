@@ -19,6 +19,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
+def _parse_dt(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    raw = str(value).strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(raw)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
 def release_expired_locks(app=None) -> int:
     """Find and release all expired ticket locks.
 
@@ -33,18 +46,22 @@ def release_expired_locks(app=None) -> int:
         # Find all tickets whose lock has expired
         expired = db.session.execute(
             db.text("""
-                SELECT id, locked_by, COALESCE(lock_timeout_seconds, 1800) as timeout_secs
+                SELECT id, locked_by, locked_at, COALESCE(lock_timeout_seconds, 1800) as timeout_secs
                 FROM tickets
                 WHERE locked_at IS NOT NULL
-                  AND datetime(locked_at, '+' || COALESCE(lock_timeout_seconds, 1800) || ' seconds')
-                      < datetime('now')
             """)
         ).fetchall()
 
-        now = _now()
+        now_dt = datetime.now(timezone.utc)
         for row in expired:
             ticket_id = row[0]
             locked_by = row[1]
+            locked_at = _parse_dt(row[2])
+            timeout_secs = int(row[3] or 1800)
+            if locked_at is None:
+                continue
+            if (locked_at.timestamp() + timeout_secs) > now_dt.timestamp():
+                continue
 
             # Update via raw SQL to avoid SQLAlchemy CHECK constraint issues
             db.session.execute(
@@ -52,7 +69,7 @@ def release_expired_locks(app=None) -> int:
                     "UPDATE tickets SET locked_at = NULL, locked_by = NULL, updated_at = :now "
                     "WHERE id = :id AND locked_at IS NOT NULL"
                 ),
-                {"id": ticket_id, "now": now},
+                {"id": ticket_id, "now": now_dt},
             )
 
             activity = TicketActivity(
@@ -61,7 +78,7 @@ def release_expired_locks(app=None) -> int:
                 actor="system:janitor",
                 action="auto_release",
                 payload=json.dumps({"previously_locked_by": locked_by}),
-                created_at=now,
+                created_at=now_dt,
             )
             db.session.add(activity)
             released += 1

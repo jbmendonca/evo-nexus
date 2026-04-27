@@ -18,37 +18,43 @@ _running_jobs = {}
 
 def _post_restore_migrate():
     """Run schema fixes after restoring a backup (old DBs may have missing columns/bad data)."""
-    import sqlite3
     from flask import current_app
+    from models import db as _db, seed_roles, seed_systems
+    from schema_migrations import upgrade_app_schema
 
-    db_path = current_app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+    db_uri = current_app.config["SQLALCHEMY_DATABASE_URI"]
+    if db_uri.startswith("sqlite:///"):
+        import sqlite3
 
-    # Ensure all tables exist (db.create_all equivalent for new models)
-    from models import db as _db
-    _db.create_all()
+        db_path = db_uri.replace("sqlite:///", "")
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
 
-    # Add missing columns
-    existing = {row[1] for row in cur.execute("PRAGMA table_info(roles)").fetchall()}
-    if "agent_access_json" not in existing:
-        cur.execute("ALTER TABLE roles ADD COLUMN agent_access_json TEXT DEFAULT '{\"mode\": \"all\"}'")
+        # Ensure all tables exist (db.create_all equivalent for new models)
+        _db.create_all()
 
-    # Fix corrupted datetime columns (NULL or non-string crash SQLAlchemy)
-    for tbl, col in [("roles", "created_at"), ("users", "created_at"), ("users", "last_login")]:
-        try:
-            tbl_cols = {row[1] for row in cur.execute(f"PRAGMA table_info({tbl})").fetchall()}
-            if col in tbl_cols:
-                cur.execute(f"UPDATE {tbl} SET {col} = datetime('now') WHERE {col} IS NOT NULL AND typeof({col}) != 'text'")
-                cur.execute(f"UPDATE {tbl} SET {col} = datetime('now') WHERE {col} IS NOT NULL AND {col} != '' AND {col} NOT LIKE '____-__-__%'")
-        except Exception:
-            pass
+        # Add missing columns
+        existing = {row[1] for row in cur.execute("PRAGMA table_info(roles)").fetchall()}
+        if "agent_access_json" not in existing:
+            cur.execute("ALTER TABLE roles ADD COLUMN agent_access_json TEXT DEFAULT '{\"mode\": \"all\"}'")
 
-    conn.commit()
-    conn.close()
+        # Fix corrupted datetime columns (NULL or non-string crash SQLAlchemy)
+        for tbl, col in [("roles", "created_at"), ("users", "created_at"), ("users", "last_login")]:
+            try:
+                tbl_cols = {row[1] for row in cur.execute(f"PRAGMA table_info({tbl})").fetchall()}
+                if col in tbl_cols:
+                    cur.execute(f"UPDATE {tbl} SET {col} = datetime('now') WHERE {col} IS NOT NULL AND typeof({col}) != 'text'")
+                    cur.execute(f"UPDATE {tbl} SET {col} = datetime('now') WHERE {col} IS NOT NULL AND {col} != '' AND {col} NOT LIKE '____-__-__%'")
+            except Exception:
+                pass
 
-    # Re-seed roles to ensure new permissions exist
-    from models import seed_roles, seed_systems
+        conn.commit()
+        conn.close()
+    else:
+        _db.create_all()
+        with _db.engine.begin() as connection:
+            upgrade_app_schema(connection)
+
     seed_roles()
     seed_systems()
 

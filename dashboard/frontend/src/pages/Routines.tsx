@@ -25,6 +25,7 @@ import {
 import { api } from '../lib/api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { useTranslation } from 'react-i18next'
+import { PageSkeleton } from '../components/PageStates'
 
 interface Routine {
   name: string
@@ -131,11 +132,11 @@ function StatCard({ label, value, icon: Icon }: { label: string; value: string |
 }
 
 function SkeletonStat() {
-  return <div className="skeleton h-32 rounded-2xl" />
+  return <PageSkeleton cards={1} rows={0} />
 }
 
 function SkeletonRow() {
-  return <div className="skeleton h-14 rounded-lg mb-2" />
+  return <PageSkeleton cards={0} rows={1} />
 }
 
 export default function Routines() {

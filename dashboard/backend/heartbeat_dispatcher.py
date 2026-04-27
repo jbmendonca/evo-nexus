@@ -20,6 +20,8 @@ from pathlib import Path
 
 import schedule
 
+from db_compat import connect_dashboard_db
+
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 
 # Thread pool for async heartbeat runs (size 4)
@@ -35,14 +37,7 @@ def _now_iso() -> str:
 
 
 def _get_db():
-    import sqlite3
-    from pathlib import Path as _Path
-    db_path = WORKSPACE / "dashboard" / "data" / "evonexus.db"
-    conn = sqlite3.connect(str(db_path), timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    return connect_dashboard_db(timeout=30)
 
 
 def _is_debounced(heartbeat_id: str) -> tuple[bool, str | None]:

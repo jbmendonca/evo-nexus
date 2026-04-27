@@ -9,7 +9,9 @@ const os = require('os');
 const {
   loadProviderConfig,
   resolveProviderModel,
+  getProviderCandidates,
 } = require('./provider-config');
+const { recordProviderEvent } = require('./platform-metrics');
 let sdkModule = null;
 
 // Workspace root is three levels up from this file (dashboard/terminal-server/src/).
@@ -238,12 +240,36 @@ class ChatBridge {
     const model = resolveProviderModel(providerConfig);
     const baseUrl = (env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
     const apiKey = env.OPENAI_API_KEY || env.CODEX_API_KEY || '';
+    const providerId = providerConfig.provider_id || providerConfig.active || 'unknown';
+    const startedAt = Date.now();
 
     if (!model) {
       throw new Error(`Provider "${providerConfig.active}" sem modelo configurado. Defina o campo Model em Providers.`);
     }
     if (!apiKey) {
       throw new Error(`Provider "${providerConfig.active}" sem API key configurada para Chat Completion.`);
+    }
+
+    recordProviderEvent({
+      providerId,
+      event: 'chat_start',
+      mode: 'chat',
+      model,
+      success: true,
+      metadata: { baseUrl },
+    });
+
+    const preflightResp = await fetch(`${baseUrl}/models`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: abortController.signal,
+    });
+
+    if (!preflightResp.ok) {
+      const body = await preflightResp.text().catch(() => '');
+      throw new Error(`Provider preflight failed (${preflightResp.status}): ${body.slice(0, 240)}`);
     }
 
     const runtimePrompt = this._buildChatCompletionSystemPrompt(agentName, cwd, sessionId);
@@ -278,6 +304,15 @@ class ChatBridge {
 
         if (!resp.ok || !resp.body) {
           const body = await resp.text().catch(() => '');
+          recordProviderEvent({
+            providerId,
+            event: 'chat_error',
+            mode: 'chat',
+            model,
+            success: false,
+            detail: `HTTP ${resp.status}: ${body.slice(0, 240)}`,
+            latencyMs: Date.now() - startedAt,
+          });
           throw new Error(`Chat Completion falhou (${resp.status}): ${body.slice(0, 240)}`);
         }
 
@@ -322,13 +357,39 @@ class ChatBridge {
         }
         session.active = false;
         this.sessions.delete(sessionId);
+        recordProviderEvent({
+          providerId,
+          event: 'chat_complete',
+          mode: 'chat',
+          model,
+          success: true,
+          latencyMs: Date.now() - startedAt,
+        });
         if (onComplete) onComplete({ sdkSessionId: null });
       } catch (err) {
         session.active = false;
         this.sessions.delete(sessionId);
         if (err.name === 'AbortError') {
+          recordProviderEvent({
+            providerId,
+            event: 'chat_aborted',
+            mode: 'chat',
+            model,
+            success: null,
+            detail: err.message || 'Aborted',
+            latencyMs: Date.now() - startedAt,
+          });
           if (onComplete) onComplete({ sdkSessionId: null });
         } else if (onError) {
+          recordProviderEvent({
+            providerId,
+            event: 'chat_error',
+            mode: 'chat',
+            model,
+            success: false,
+            detail: err.message || String(err),
+            latencyMs: Date.now() - startedAt,
+          });
           onError(err);
         }
       }
@@ -352,7 +413,24 @@ class ChatBridge {
 
     const providerConfig = loadProviderConfig();
     if (providerConfig.active !== 'anthropic') {
-      return this._startOpenAICompatibleSession(sessionId, options, providerConfig);
+      const candidates = getProviderCandidates('chat', providerConfig.provider_id || providerConfig.active);
+      let lastError = null;
+      for (const candidate of (candidates.length > 0 ? candidates : [providerConfig])) {
+        try {
+          return await this._startOpenAICompatibleSession(sessionId, options, candidate);
+        } catch (err) {
+          lastError = err;
+          recordProviderEvent({
+            providerId: candidate.provider_id || candidate.active || 'unknown',
+            event: 'chat_failover',
+            mode: 'chat',
+            model: resolveProviderModel(candidate) || null,
+            success: false,
+            detail: err.message || String(err),
+          });
+        }
+      }
+      throw lastError || new Error('No chat provider available');
     }
 
     const { query: sdkQuery } = await loadSDK();

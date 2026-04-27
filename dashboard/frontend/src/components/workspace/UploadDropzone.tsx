@@ -49,6 +49,7 @@ export default function UploadDropzone({
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${API_BASE}/api/workspace/upload`)
       xhr.withCredentials = true
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest')
 
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable) {

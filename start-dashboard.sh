@@ -11,9 +11,9 @@
 # not running inside the container, every "open agent chat" click fails
 # with "Could not reach terminal-server".
 #
-# This wrapper starts both processes, then exec-waits. If EITHER dies, we
-# kill the other and exit with a non-zero code so Docker/Swarm restarts
-# the whole container — keeping both processes in sync.
+# This wrapper starts both processes, but supervises the terminal-server
+# separately. If the terminal dies, it is restarted in-place. If Flask dies,
+# the container exits so Docker/Swarm can restart the whole stack.
 # ============================================================================
 set -euo pipefail
 
@@ -75,26 +75,55 @@ EOF
     fi
 fi
 
-# Start terminal-server in the background
-node /workspace/dashboard/terminal-server/bin/server.js --port "${TERMINAL_PORT}" &
-TERMINAL_PID=$!
+SHUTTING_DOWN=0
+TERMINAL_PID=""
+TERMINAL_SUPERVISOR_PID=""
+FLASK_PID=""
+
+terminal_supervisor() {
+    trap 'SHUTTING_DOWN=1; if [ -n "${TERMINAL_PID}" ]; then kill "${TERMINAL_PID}" 2>/dev/null || true; fi' EXIT INT TERM
+    while [ "${SHUTTING_DOWN}" -eq 0 ]; do
+        node /workspace/dashboard/terminal-server/bin/server.js --port "${TERMINAL_PORT}" &
+        TERMINAL_PID=$!
+        echo "[start-dashboard] terminal-server spawned (pid=${TERMINAL_PID})"
+
+        if wait "${TERMINAL_PID}"; then
+            TERMINAL_EXIT=0
+        else
+            TERMINAL_EXIT=$?
+        fi
+
+        if [ "${SHUTTING_DOWN}" -ne 0 ]; then
+            break
+        fi
+
+        echo "[start-dashboard] terminal-server exited with code ${TERMINAL_EXIT}; restarting in 2s"
+        sleep 2
+    done
+}
+
+# Start terminal-server supervisor in the background
+terminal_supervisor &
+TERMINAL_SUPERVISOR_PID=$!
 
 # Start Flask in the background
 uv run python /workspace/dashboard/backend/app.py &
 FLASK_PID=$!
 
-# When this script exits for any reason, kill both children
+# When this script exits for any reason, kill both supervisors/processes.
 # shellcheck disable=SC2317  # invoked by trap below
 cleanup() {
-    echo "[start-dashboard] shutting down (terminal=${TERMINAL_PID}, flask=${FLASK_PID})"
-    kill "${TERMINAL_PID}" "${FLASK_PID}" 2>/dev/null || true
-    wait "${TERMINAL_PID}" 2>/dev/null || true
+    SHUTTING_DOWN=1
+    echo "[start-dashboard] shutting down (supervisor=${TERMINAL_SUPERVISOR_PID}, flask=${FLASK_PID})"
+    kill "${TERMINAL_SUPERVISOR_PID}" "${FLASK_PID}" 2>/dev/null || true
+    wait "${TERMINAL_SUPERVISOR_PID}" 2>/dev/null || true
     wait "${FLASK_PID}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
-# Wait for EITHER process to exit, then propagate the exit code. Swarm
-# restart_policy will bring the whole container back up on any failure.
+# Wait for either Flask or the supervisor to exit. If Flask exits, cleanup
+# stops the terminal supervisor; if the supervisor dies, cleanup takes Flask
+# down too so the container does not stay half-alive.
 wait -n
 EXIT_CODE=$?
 echo "[start-dashboard] a child process exited with code ${EXIT_CODE}"

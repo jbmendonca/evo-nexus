@@ -17,9 +17,12 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from flask import Blueprint, jsonify, redirect, request, session
+from flask import Blueprint, jsonify, request, session
 from flask_login import login_required
 
+from platform_cache import cache_delete, cache_get, cache_get_or_set, cache_set
+from platform_metrics import record_provider_event
+from platform_queue import publish_event
 from routes._helpers import WORKSPACE
 
 bp = Blueprint("providers", __name__)
@@ -30,6 +33,15 @@ OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 OPENAI_AUTH_URL = "https://auth.openai.com/oauth/authorize"
 OPENAI_TOKEN_URL = "https://auth.openai.com/oauth/token"
 CODEX_AUTH_FILE = Path.home() / ".codex" / "auth.json"
+DEFAULT_FAILOVER_ORDER = [
+    "anthropic",
+    "openrouter",
+    "openai",
+    "codex_auth",
+    "gemini",
+    "bedrock",
+    "vertex",
+]
 
 # Allowlisted CLI commands — only these binaries can be spawned
 ALLOWED_CLI_COMMANDS = frozenset({"claude", "openclaude"})
@@ -78,6 +90,73 @@ def _write_config(config: dict):
         json.dumps(config, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+
+
+def _normalize_failover_order(order: list[str] | None, providers: dict[str, dict], active: str) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def _append(provider_id: str) -> None:
+        if provider_id in seen:
+            return
+        provider = providers.get(provider_id)
+        if not provider or provider.get("coming_soon"):
+            return
+        seen.add(provider_id)
+        ordered.append(provider_id)
+
+    _append(active)
+    for provider_id in order or []:
+        _append(provider_id)
+    for provider_id in DEFAULT_FAILOVER_ORDER:
+        _append(provider_id)
+    for provider_id in providers.keys():
+        _append(provider_id)
+    return ordered
+
+
+def _default_routing(config: dict) -> dict:
+    providers = config.get("providers", {}) if isinstance(config.get("providers"), dict) else {}
+    active = config.get("active_provider", "anthropic")
+    return {
+        "enabled": True,
+        "failover_order": _normalize_failover_order([], providers, active),
+    }
+
+
+def _get_routing(config: dict) -> dict:
+    routing = config.get("routing")
+    if not isinstance(routing, dict):
+        routing = {}
+    providers = config.get("providers", {}) if isinstance(config.get("providers"), dict) else {}
+    active = config.get("active_provider", "anthropic")
+    return {
+        "enabled": bool(routing.get("enabled", True)),
+        "failover_order": _normalize_failover_order(
+            routing.get("failover_order") if isinstance(routing.get("failover_order"), list) else [],
+            providers,
+            active,
+        ),
+    }
+
+
+def _invalidate_provider_caches() -> None:
+    cache_delete("providers:list")
+    cache_delete("observability:summary")
+
+
+def _record_provider_metric(provider_id: str, event: str, *, success: bool | None = None, detail: str | None = None, latency_ms: float | None = None, model: str | None = None) -> None:
+    try:
+        record_provider_event(
+            provider_id=provider_id,
+            event=event,
+            success=success,
+            detail=detail,
+            latency_ms=latency_ms,
+            model=model,
+        )
+    except Exception:
+        pass
 
 
 def _mask_secret(value: str) -> str:
@@ -176,61 +255,71 @@ def _save_codex_auth(tokens: dict):
 @login_required
 def list_providers():
     """List all providers with status info."""
-    config = _read_config()
-    active = config.get("active_provider", "anthropic")
-    providers = config.get("providers", {})
+    def _build_payload():
+        config = _read_config()
+        active = config.get("active_provider", "anthropic")
+        providers = config.get("providers", {})
+        routing = _get_routing(config)
 
-    # Check CLI installation status for both binaries
-    claude_status = _check_cli("claude")
-    openclaude_status = _check_cli("openclaude")
+        # Check CLI installation status for both binaries
+        claude_status = _check_cli("claude")
+        openclaude_status = _check_cli("openclaude")
 
-    result = []
-    for key, prov in providers.items():
-        cli = prov.get("cli_command", "claude")
-        if cli not in ALLOWED_CLI_COMMANDS:
-            continue
-        cli_status = claude_status if cli == "claude" else openclaude_status
+        result = []
+        for key, prov in providers.items():
+            cli = prov.get("cli_command", "claude")
+            if cli not in ALLOWED_CLI_COMMANDS:
+                continue
+            cli_status = claude_status if cli == "claude" else openclaude_status
 
-        # Mask env var values for API response
-        env_vars = prov.get("env_vars", {})
-        masked_vars = {}
-        for var_name, var_value in env_vars.items():
-            if "KEY" in var_name or "SECRET" in var_name or "TOKEN" in var_name:
-                masked_vars[var_name] = _mask_secret(var_value)
-            else:
-                masked_vars[var_name] = var_value
+            # Mask env var values for API response
+            env_vars = prov.get("env_vars", {})
+            masked_vars = {}
+            for var_name, var_value in env_vars.items():
+                if "KEY" in var_name or "SECRET" in var_name or "TOKEN" in var_name:
+                    masked_vars[var_name] = _mask_secret(var_value)
+                else:
+                    masked_vars[var_name] = var_value
 
-        # Check if provider has required env vars filled
-        has_config = all(
-            v != "" for k, v in env_vars.items()
-            if k not in ("CLAUDE_CODE_USE_OPENAI", "CLAUDE_CODE_USE_GEMINI",
-                         "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX")
-        ) if env_vars else True
+            # Check if provider has required env vars filled
+            has_config = all(
+                v != "" for k, v in env_vars.items()
+                if k not in ("CLAUDE_CODE_USE_OPENAI", "CLAUDE_CODE_USE_GEMINI",
+                             "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX")
+            ) if env_vars else True
 
-        result.append({
-            "id": key,
-            "name": prov.get("name", key),
-            "description": prov.get("description", ""),
-            "cli_command": cli,
-            "is_active": key == active,
-            "installed": cli_status["installed"],
-            "version": cli_status["version"],
-            "path": cli_status["path"],
-            "has_config": has_config,
-            "env_vars": masked_vars,
-            "requires_logout": prov.get("requires_logout", False),
-            "setup_hint": prov.get("setup_hint"),
-            "default_model": prov.get("default_model"),
-            "default_base_url": prov.get("default_base_url"),
-            "default_region": prov.get("default_region"),
-        })
+            result.append({
+                "id": key,
+                "name": prov.get("name", key),
+                "description": prov.get("description", ""),
+                "cli_command": cli,
+                "is_active": key == active,
+                "installed": cli_status["installed"],
+                "version": cli_status["version"],
+                "path": cli_status["path"],
+                "has_config": has_config,
+                "env_vars": masked_vars,
+                "requires_logout": prov.get("requires_logout", False),
+                "setup_hint": prov.get("setup_hint"),
+                "default_model": prov.get("default_model"),
+                "default_base_url": prov.get("default_base_url"),
+                "default_region": prov.get("default_region"),
+            })
 
-    return jsonify({
-        "providers": result,
-        "active_provider": active,
-        "claude_installed": claude_status["installed"],
-        "openclaude_installed": openclaude_status["installed"],
-    })
+        return {
+            "providers": result,
+            "active_provider": active,
+            "claude_installed": claude_status["installed"],
+            "openclaude_installed": openclaude_status["installed"],
+            "routing": routing,
+        }
+
+    if request.args.get("refresh") == "1":
+        payload = _build_payload()
+        cache_set("providers:list", payload, ttl=30)
+        return jsonify(payload)
+
+    return jsonify(cache_get_or_set("providers:list", _build_payload, ttl=30))
 
 
 @bp.route("/api/providers/active", methods=["GET"])
@@ -262,9 +351,58 @@ def set_active_provider():
         return jsonify({"error": f"Unknown provider: {provider_id}"}), 400
 
     config["active_provider"] = provider_id
+    config["routing"] = _get_routing(config)
+    provider = config.get("providers", {}).get(provider_id, {}) if provider_id != "none" else {}
     _write_config(config)
+    _invalidate_provider_caches()
+    publish_event("provider-active-updated", {"provider_id": provider_id})
+    _record_provider_metric(
+        provider_id,
+        "activated",
+        success=True,
+        model=provider.get("default_model") or provider.get("env_vars", {}).get("OPENAI_MODEL"),
+    )
 
     return jsonify({"status": "ok", "active_provider": provider_id})
+
+
+@bp.route("/api/providers/routing", methods=["GET"])
+@login_required
+def get_provider_routing():
+    """Get the active failover routing configuration."""
+    config = _read_config()
+    return jsonify({
+        "routing": _get_routing(config),
+        "available_providers": list((config.get("providers", {}) or {}).keys()),
+    })
+
+
+@bp.route("/api/providers/routing", methods=["POST"])
+@login_required
+def update_provider_routing():
+    """Persist the failover order used by the terminal server."""
+    data = request.get_json(silent=True) or {}
+    config = _read_config()
+    providers = config.get("providers", {}) if isinstance(config.get("providers"), dict) else {}
+    active = config.get("active_provider", "anthropic")
+
+    incoming = data.get("routing", data)
+    if not isinstance(incoming, dict):
+        return jsonify({"error": "routing payload must be an object"}), 400
+
+    routing = _get_routing(config)
+    routing["enabled"] = bool(incoming.get("enabled", routing["enabled"]))
+    order = incoming.get("failover_order")
+    if order is not None and not isinstance(order, list):
+        return jsonify({"error": "failover_order must be a list"}), 400
+    routing["failover_order"] = _normalize_failover_order(order, providers, active)
+
+    config["routing"] = routing
+    _write_config(config)
+    _invalidate_provider_caches()
+    publish_event("provider-routing-updated", {"routing": routing})
+    _record_provider_metric("routing", "routing_updated", success=True, detail="failover order updated")
+    return jsonify({"status": "ok", "routing": routing})
 
 
 @bp.route("/api/providers/<provider_id>/config", methods=["GET"])
@@ -321,6 +459,9 @@ def update_provider_config(provider_id):
 
     provider["env_vars"] = existing
     _write_config(config)
+    _invalidate_provider_caches()
+    publish_event("provider-config-updated", {"provider_id": provider_id})
+    _record_provider_metric(provider_id, "config_updated", success=True)
 
     return jsonify({"status": "ok", "provider_id": provider_id})
 
@@ -339,6 +480,7 @@ def test_provider(provider_id):
         return jsonify({"success": False, "error": f"Unsupported CLI: {cli}"}), 400
 
     if not shutil.which(cli):
+        _record_provider_metric(provider_id, "test", success=False, detail=f"{cli} missing in PATH")
         return jsonify({
             "success": False,
             "error": f"'{cli}' not found in PATH",
@@ -351,7 +493,17 @@ def test_provider(provider_id):
     )
     test_env = {**os.environ, **env_vars}
 
+    start = time.monotonic()
     result = _run_cli_version(cli, env=test_env)
+    latency_ms = round((time.monotonic() - start) * 1000, 2)
+    _record_provider_metric(
+        provider_id,
+        "test",
+        success=result["installed"],
+        latency_ms=latency_ms,
+        model=provider.get("default_model") or provider.get("env_vars", {}).get("OPENAI_MODEL"),
+        detail=result["version"] or result["path"] or None,
+    )
     return jsonify({
         "success": result["installed"],
         "version": result["version"],
@@ -431,6 +583,9 @@ def openai_auth_complete():
     providers = config.get("providers", {})
     config["active_provider"] = "codex_auth" if "codex_auth" in providers else "openai"
     _write_config(config)
+    _invalidate_provider_caches()
+    publish_event("provider-auth-complete", {"provider_id": config["active_provider"]})
+    _record_provider_metric(config["active_provider"], "auth_complete", success=True)
 
     return jsonify({"status": "ok", "message": "Autenticado com sucesso!"})
 
@@ -500,6 +655,9 @@ def openai_device_poll():
     providers = config.get("providers", {})
     config["active_provider"] = "codex_auth" if "codex_auth" in providers else "openai"
     _write_config(config)
+    _invalidate_provider_caches()
+    publish_event("provider-auth-complete", {"provider_id": config["active_provider"], "method": "device"})
+    _record_provider_metric(config["active_provider"], "auth_complete", success=True, detail="device")
 
     session.pop("openai_device_auth_id", None)
     session.pop("openai_device_user_code", None)
@@ -687,4 +845,7 @@ def openai_logout():
     config = _read_config()
     config["active_provider"] = "anthropic"
     _write_config(config)
+    _invalidate_provider_caches()
+    publish_event("provider-logout", {"provider_id": "codex_auth"})
+    _record_provider_metric("codex_auth", "logout", success=True)
     return jsonify({"status": "ok"})

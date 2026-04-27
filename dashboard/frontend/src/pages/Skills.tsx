@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useTranslation } from 'react-i18next'
+import { PageSkeleton } from '../components/PageStates'
 
 interface Skill {
   name: string
@@ -51,23 +52,11 @@ function getCategoryMeta(prefix: string) {
 }
 
 function SkeletonCard() {
-  return (
-    <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-5">
-      <div className="flex items-start justify-between mb-3">
-        <div className="h-10 w-10 rounded-lg bg-[#21262d] animate-pulse" />
-        <div className="h-5 w-16 rounded-full bg-[#21262d] animate-pulse" />
-      </div>
-      <div className="h-4 w-32 rounded bg-[#21262d] animate-pulse mb-2" />
-      <div className="space-y-1.5 mb-4">
-        <div className="h-3 w-full rounded bg-[#21262d] animate-pulse" />
-        <div className="h-3 w-2/3 rounded bg-[#21262d] animate-pulse" />
-      </div>
-    </div>
-  )
+  return <PageSkeleton cards={1} rows={0} />
 }
 
 function SkeletonStat() {
-  return <div className="skeleton h-24 rounded-2xl" />
+  return <PageSkeleton cards={1} rows={0} />
 }
 
 function StatCard({ label, value, icon: Icon }: { label: string; value: string | number; icon: LucideIcon }) {

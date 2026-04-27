@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+﻿import { useEffect, useRef, useState, useCallback } from 'react'
 import { useToast } from './Toast'
 import Markdown from './Markdown'
 import { AgentAvatar } from './AgentAvatar'
 import { useNotifications } from '../context/NotificationContext'
+import { ApprovalCard, ToolCard, TypingIndicator } from './agent-chat/ChatBlocks'
 import {
-  Send, Square, ChevronDown, ChevronRight,
-  FileCode, Terminal as TermIcon, CheckCircle2,
-  Paperclip, X, File as FileIcon, ImageIcon, Upload,
-  Ticket as TicketIcon, Plus, ShieldAlert, Check, Ban,
-  Pencil, Copy, FileText, Edit2,
+  Send, Square, Terminal as TermIcon, CheckCircle2,
+  Paperclip, X, File as FileIcon, Upload,
+  Ticket as TicketIcon, Plus, ShieldAlert, Check,
+  Pencil, Copy,
 } from 'lucide-react'
 
 interface SkillItem {
@@ -140,7 +140,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
     let ws: WebSocket | null = null
 
     ;(async () => {
-      // 1) HTTP preflight — fails fast on ECONNREFUSED so we can show a real error
+      // 1) HTTP preflight â€” fails fast on ECONNREFUSED so we can show a real error
       //    instead of hanging in 'connecting' forever (same pattern as AgentTerminal).
       try {
         const res = await fetch(`${TS_HTTP}/api/health`)
@@ -169,7 +169,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
 
         switch (msg.type) {
           case 'session_joined':
-            // Restore chat history from server — preserve uuid from each message
+            // Restore chat history from server â€” preserve uuid from each message
             if (msg.chatHistory && msg.chatHistory.length > 0) {
               setMessages(msg.chatHistory.map((m: any) => ({
                 ...m,
@@ -229,7 +229,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
                   })
                   n.onclick = () => { window.focus() }
                 } catch {
-                  // Notification API unavailable (e.g. Firefox private mode) — no-op
+                  // Notification API unavailable (e.g. Firefox private mode) â€” no-op
                 }
               }
             }
@@ -353,7 +353,10 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
       const res = await fetch('/api/tickets', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
         body: JSON.stringify({
           title: title.trim(),
           assignee_agent: agent,
@@ -421,13 +424,13 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
         }
 
         case 'thinking_delta': {
-          // Silently consume — we show typing indicator instead
+          // Silently consume â€” we show typing indicator instead
           break
         }
 
         case 'tool_use_start': {
           setIsThinking(false)
-          // Subagent tool — accumulate in ref, don't add a block
+          // Subagent tool â€” accumulate in ref, don't add a block
           if (msg.parentToolUseId) {
             subagentToolRef.current = {
               toolName: msg.toolName,
@@ -453,7 +456,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
         }
 
         case 'tool_input_delta': {
-          // Subagent tool input — accumulate in ref
+          // Subagent tool input â€” accumulate in ref
           if (msg.parentToolUseId) {
             if (subagentToolRef.current && subagentToolRef.current.parentToolUseId === msg.parentToolUseId) {
               subagentToolRef.current = { ...subagentToolRef.current, input: subagentToolRef.current.input + (msg.json || '') }
@@ -473,7 +476,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
         }
 
         case 'block_stop': {
-          // Subagent block finished — flush to parent Agent block's subagentTools
+          // Subagent block finished â€” flush to parent Agent block's subagentTools
           if (msg.parentToolUseId && subagentToolRef.current) {
             const entry = {
               toolName: subagentToolRef.current.toolName,
@@ -515,7 +518,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
         }
 
         case 'task_started': {
-          // Subagent started — find the Agent tool_use block and enrich it
+          // Subagent started â€” find the Agent tool_use block and enrich it
           const last2 = copy[copy.length - 1]
           if (last2?.role === 'assistant') {
             const blocks = [...(last2 as any).blocks]
@@ -694,7 +697,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
     setEditingText('')
   }, [])
 
-  // Commit inline edit — truncates messages from edit point and sends rewind
+  // Commit inline edit â€” truncates messages from edit point and sends rewind
   const commitEdit = useCallback(() => {
     const text = editingText.trim()
     const uuid = editingUuid
@@ -904,7 +907,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
 
   return (
     <div
-      className="flex flex-col h-full bg-[#0C111D] relative"
+      className="relative flex h-full min-h-0 flex-col bg-[var(--bg-primary)]"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -949,7 +952,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
           </button>
           {showTicketPicker && (
             <div
-              className="absolute mt-1.5 left-0 w-72 rounded-lg border bg-[#161b22] shadow-xl z-50 max-h-80 overflow-y-auto"
+              className="absolute left-0 mt-1.5 w-[min(18rem,calc(100vw-2rem))] max-h-80 overflow-y-auto rounded-lg border bg-[#161b22] shadow-xl z-50"
               style={{ borderColor: '#21262d' }}
             >
               <div className="px-3 py-2 border-b border-[#21262d] text-[10px] text-[#667085] uppercase tracking-wider">
@@ -1034,202 +1037,29 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
         </div>
       )}
 
-      {/* Messages area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div
-              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-              style={{ background: `${accentColor}15`, border: `1px solid ${accentColor}30` }}
-            >
-              <TermIcon size={24} style={{ color: accentColor }} />
-            </div>
-            <p className="text-[#e6edf3] font-medium text-sm mb-1">
-              Chat with @{agent}
-            </p>
-            <p className="text-[#667085] text-xs max-w-[300px]">
-              Type a message below to start a conversation. The agent has access to your workspace tools.
-            </p>
-          </div>
-        )}
-
-        {messages.map((msg, i) => (
-          <div key={i}>
-            {msg.role === 'user' && editingUuid && msg.uuid === editingUuid && (
-              <div className="flex justify-end">
-                <div className="w-full max-w-[85%] rounded-2xl border bg-[#1a2744] px-3 py-2" style={{ borderColor: accentColor + '60' }}>
-                  <textarea
-                    value={editingText}
-                    onChange={(e) => setEditingText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        e.preventDefault()
-                        cancelEdit()
-                      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                        e.preventDefault()
-                        commitEdit()
-                      }
-                    }}
-                    autoFocus
-                    rows={Math.min(10, Math.max(2, editingText.split('\n').length))}
-                    className="w-full bg-transparent text-sm text-[#e6edf3] placeholder:text-[#667085] focus:outline-none resize-none"
-                  />
-                  <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-[#21262d]">
-                    <button
-                      onClick={cancelEdit}
-                      className="px-3 py-1 rounded-md text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={commitEdit}
-                      disabled={!editingText.trim()}
-                      className="px-3 py-1 rounded-md text-xs border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{
-                        borderColor: `${accentColor}40`,
-                        background: `${accentColor}15`,
-                        color: accentColor,
-                      }}
-                    >
-                      Send
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {msg.role === 'user' && !(editingUuid && msg.uuid === editingUuid) && (
-              <div className="flex justify-end group/usermsg items-end gap-1">
-                {/* Hover-revealed action buttons */}
-                <div className="flex items-center gap-0.5 opacity-0 group-hover/usermsg:opacity-100 transition-opacity mr-1">
-                  <button
-                    onClick={() => copyMessage(msg, i)}
-                    className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-[#667085] hover:text-[#e6edf3] hover:bg-[#21262d]"
-                    title={copiedIndex === i ? 'Copied' : 'Copy message'}
-                  >
-                    {copiedIndex === i ? <Check size={12} className="text-[#00FFA7]" /> : <Copy size={12} />}
-                  </button>
-                  {msg.uuid && status !== 'running' && !editingUuid && (
-                    <button
-                      onClick={() => startEdit(msg)}
-                      className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-[#667085] hover:text-[#e6edf3] hover:bg-[#21262d]"
-                      title="Edit message"
-                    >
-                      <Pencil size={12} />
-                    </button>
-                  )}
-                </div>
-                <div className="max-w-[70%] space-y-2">
-                  {/* File attachments in bubble */}
-                  {(msg as any).files && (msg as any).files.length > 0 && (
-                    <div className="flex flex-wrap gap-2 justify-end">
-                      {(msg as any).files.map((f: FileRef, fi: number) => (
-                        f.previewUrl ? (
-                          <img
-                            key={fi}
-                            src={f.previewUrl}
-                            alt={f.name}
-                            className="w-24 h-24 object-cover rounded-xl border border-[#21262d]"
-                          />
-                        ) : (
-                          <div
-                            key={fi}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#21262d] bg-[#161b22]"
-                          >
-                            <FileIcon size={12} className="text-[#667085]" />
-                            <span className="text-[11px] text-[#8b949e] truncate max-w-[140px]">{f.name}</span>
-                          </div>
-                        )
-                      ))}
-                    </div>
-                  )}
-                  {/* Text bubble */}
-                  {(msg as any).text && (
-                    <div className="px-4 py-2.5 rounded-2xl rounded-br-md bg-[#1a2744] border border-[#21262d] text-[#e6edf3] text-sm leading-relaxed">
-                      {(msg as any).text}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {msg.role === 'assistant' && (
-              <div className="flex gap-3 group/asstmsg">
-                <div className="flex-shrink-0 mt-0.5">
-                  <AgentAvatar name={agent} size={28} />
-                </div>
-                <div className="flex-1 min-w-0 space-y-2">
-                  {(msg as any).blocks.map((block: AssistantBlock, j: number) => (
-                    <div key={j}>
-                      {block.type === 'text' && (
-                        <div className="text-sm text-[#e6edf3] leading-relaxed prose-invert max-w-none">
-                          <Markdown>{block.text}</Markdown>
-                        </div>
-                      )}
-                      {block.type === 'tool_use' && (
-                        <ToolCard block={block} accentColor={accentColor} />
-                      )}
-                    </div>
-                  ))}
-                  {/* Typing indicator — shown while streaming with no visible content yet */}
-                  {(msg as any).streaming && (() => {
-                    const blocks = (msg as any).blocks as AssistantBlock[]
-                    const hasVisibleContent = blocks.some(b => b.type === 'text' || b.type === 'tool_use')
-                    return !hasVisibleContent
-                  })() && (
-                    <TypingIndicator accentColor={accentColor} isThinking={isThinking} />
-                  )}
-                  {/* Copy button — shown on hover when not streaming and there's text to copy */}
-                  {!(msg as any).streaming && getMessageText(msg) && (
-                    <div className="opacity-0 group-hover/asstmsg:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => copyMessage(msg, i)}
-                        className="flex items-center justify-center w-6 h-6 rounded-md text-[#667085] hover:text-[#e6edf3] hover:bg-[#21262d]"
-                        title={copiedIndex === i ? 'Copied' : 'Copy message'}
-                      >
-                        {copiedIndex === i ? <Check size={12} className="text-[#00FFA7]" /> : <Copy size={12} />}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {msg.role === 'system' && (
-              <div className="text-center">
-                <span className="text-[11px] text-[#667085] bg-[#161b22] px-3 py-1 rounded-full border border-[#21262d]">
-                  {msg.text}
-                </span>
-              </div>
-            )}
-          </div>
-        ))}
-
-        {/* Permission approval cards */}
-        {pendingApprovals.map(req => (
-          <ApprovalCard
-            key={req.requestId}
-            req={req}
-            accentColor={accentColor}
-            onAllow={() => respondToApproval(req.requestId, true)}
-            onDeny={() => respondToApproval(req.requestId, false)}
-          />
-        ))}
-
-        {/* Global thinking indicator when running but no assistant message yet */}
-        {status === 'running' && messages[messages.length - 1]?.role !== 'assistant' && (
-          <div className="flex gap-3">
-            <div className="flex-shrink-0 mt-0.5">
-              <AgentAvatar name={agent} size={28} />
-            </div>
-            <TypingIndicator accentColor={accentColor} isThinking />
-          </div>
-        )}
-      </div>
+      <AgentChatTimeline
+        agent={agent}
+        accentColor={accentColor}
+        messages={messages}
+        pendingApprovals={pendingApprovals}
+        status={status}
+        isThinking={isThinking}
+        editingUuid={editingUuid}
+        editingText={editingText}
+        copiedIndex={copiedIndex}
+        scrollRef={scrollRef}
+        onCancelEdit={cancelEdit}
+        onCommitEdit={commitEdit}
+        onEditingTextChange={setEditingText}
+        onCopyMessage={copyMessage}
+        onStartEdit={startEdit}
+        onRespondToApproval={respondToApproval}
+        getMessageText={getMessageText}
+      />
 
       {/* Input area */}
-      <div className="flex-shrink-0 border-t border-[#21262d] bg-[#0d1117] px-4 py-3">
-        <div className="max-w-3xl mx-auto space-y-2">
+      <div className="sticky bottom-0 z-10 flex-shrink-0 border-t border-[color:var(--border)] bg-[var(--bg-primary)] px-3 py-3 sm:px-4">
+        <div className="mx-auto max-w-3xl space-y-2">
           {/* File previews */}
           {attachedFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 px-1">
@@ -1266,12 +1096,12 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
             </div>
           )}
 
-          {/* Input row wrapper — relative so popup can anchor to bottom of it */}
+          {/* Input row wrapper â€” relative so popup can anchor to bottom of it */}
           <div className="relative">
             {/* Slash-command autocomplete popup */}
             {slashPopup.open && (
               <div
-                className="absolute left-0 right-0 rounded-xl border bg-[#161b22] shadow-xl overflow-y-auto z-50"
+                className="absolute left-0 right-0 z-50 max-h-[240px] overflow-y-auto rounded-xl border bg-[#161b22] shadow-xl sm:max-h-[280px]"
                 style={{ borderColor: '#21262d', maxHeight: '280px', bottom: 'calc(100% + 6px)' }}
               >
                 <div className="px-3 py-1.5 border-b border-[#21262d] text-[10px] text-[#667085] uppercase tracking-wider">
@@ -1396,330 +1226,233 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
   )
 }
 
-// ── Sub-components ──
-
-function TypingIndicator({ accentColor, isThinking }: { accentColor: string; isThinking?: boolean }) {
-  return (
-    <div className="flex items-center gap-2 py-1">
-      <div className="flex items-center gap-1">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="inline-block w-1.5 h-1.5 rounded-full"
-            style={{
-              backgroundColor: accentColor,
-              animation: `chat-bounce 1.4s ease-in-out infinite`,
-              animationDelay: `${i * 0.16}s`,
-            }}
-          />
-        ))}
-      </div>
-      <span
-        className="text-[10px] text-[#667085]"
-        style={{ animation: 'chat-pulse 2s ease-in-out infinite' }}
-      >
-        {isThinking ? 'Thinking...' : 'Typing...'}
-      </span>
-    </div>
-  )
-}
-
-function AgentInputToggle({ parsedInput, rawInput }: { parsedInput: any; rawInput: string }) {
-  const [showInput, setShowInput] = useState(false)
-  return (
-    <div className="border-t border-[#21262d]/50">
-      <button
-        onClick={() => setShowInput(v => !v)}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-[#667085] hover:text-[#8b949e] transition-colors w-full"
-      >
-        {showInput ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        View input
-      </button>
-      {showInput && (
-        <pre className="px-3 pb-2 text-[11px] text-[#8b949e] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
-          {parsedInput ? JSON.stringify(parsedInput, null, 2) : rawInput}
-        </pre>
-      )}
-    </div>
-  )
-}
-
-function ToolCard({ block, accentColor }: { block: Extract<AssistantBlock, { type: 'tool_use' }>; accentColor: string }) {
-  const [open, setOpen] = useState(false)
-
-  let parsedInput: any = null
-  try { parsedInput = JSON.parse(block.input) } catch {}
-
-  // Detect Agent/SendMessage tools — render special subagent card
-  const isAgentTool = block.toolName === 'Agent' || block.toolName === 'SendMessage'
-  const subagentName = parsedInput?.subagent_type || parsedInput?.name || parsedInput?.to || ''
-  const subagentDesc = parsedInput?.description || parsedInput?.summary || block.subagentType || ''
-
-  if (isAgentTool) {
-    const isRunning = block.subagentStatus === 'running'
-    const isDone = block.done || block.subagentStatus === 'completed' || block.subagentStatus === 'failed'
-    const subagentTools = block.subagentTools || []
-    const toolCount = subagentTools.length
-
-    const getToolIcon = (toolName: string) => {
-      if (toolName === 'Bash') return <TermIcon size={11} className="text-[#667085] flex-shrink-0" />
-      if (toolName === 'Read') return <FileText size={11} className="text-[#667085] flex-shrink-0" />
-      if (toolName === 'Edit' || toolName === 'Write') return <Edit2 size={11} className="text-[#667085] flex-shrink-0" />
-      return <FileCode size={11} className="text-[#667085] flex-shrink-0" />
-    }
-
-    return (
-      <div className="border border-[#21262d] rounded-lg overflow-hidden">
-        <button
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-2.5 w-full px-3 py-2.5 text-[12px] bg-[#161b22] hover:bg-[#1c2333] transition-colors"
-        >
-          {open ? <ChevronDown size={12} className="text-[#667085]" /> : <ChevronRight size={12} className="text-[#667085]" />}
-
-          {/* Subagent avatar */}
-          {(() => {
-            const isUuid = /^[0-9a-f]{8,}$/i.test(subagentName)
-            const displayName = isUuid ? '' : subagentName
-            return displayName ? (
-              <AgentAvatar name={displayName.replace('custom-', '')} size={20} />
-            ) : (
-              <FileCode size={13} style={{ color: accentColor }} />
-            )
-          })()}
-
-          <span className="font-medium text-[#e6edf3]">
-            {(() => {
-              const isUuid = /^[0-9a-f]{8,}$/i.test(subagentName)
-              return isUuid ? (block.toolName === 'SendMessage' ? 'SendMessage' : 'Agent') : subagentName ? `@${subagentName}` : block.toolName
-            })()}
-          </span>
-          {subagentDesc && (
-            <span className="text-[#8b949e] truncate max-w-[300px] text-[11px]">{subagentDesc}</span>
-          )}
-
-          <span className="ml-auto flex-shrink-0 flex items-center gap-2">
-            {/* Tool count badge */}
-            {toolCount > 0 && (
-              <span className="text-[10px] text-[#667085] tabular-nums">
-                {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
-              </span>
-            )}
-            {/* Progress summary */}
-            {isRunning && block.subagentSummary && (
-              <span className="text-[10px] text-[#667085] truncate max-w-[200px]" style={{ animation: 'chat-pulse 2s ease-in-out infinite' }}>
-                {block.subagentSummary}
-              </span>
-            )}
-            {isDone ? (
-              <CheckCircle2 size={13} className={block.subagentStatus === 'failed' ? 'text-[#ef4444]' : 'text-[#22C55E]'} />
-            ) : (
-              <TypingIndicatorMini accentColor={accentColor} />
-            )}
-          </span>
-        </button>
-        {open && (
-          <div className="border-t border-[#21262d] bg-[#0d1117]">
-            {/* Tool list */}
-            <div className="max-h-80 overflow-y-auto">
-              {subagentTools.length === 0 ? (
-                <div className="px-3 py-2 text-[11px] text-[#667085]">No tools yet</div>
-              ) : (
-                subagentTools.map((t, i) => {
-                  let inputPreview = ''
-                  try {
-                    const parsed = JSON.parse(t.input)
-                    inputPreview = (parsed.command || parsed.file_path || parsed.path || parsed.pattern || parsed.description || t.input).slice(0, 60)
-                  } catch {
-                    inputPreview = t.input.slice(0, 60)
-                  }
-                  return (
-                    <div key={t.toolUseId || i} className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-t border-[#21262d]/50 first:border-t-0">
-                      {getToolIcon(t.toolName)}
-                      <span className="text-[#8b949e] font-medium flex-shrink-0">{t.toolName}</span>
-                      {inputPreview && (
-                        <span className="text-[#667085] truncate">{inputPreview}</span>
-                      )}
-                    </div>
-                  )
-                })
-              )}
-            </div>
-            {/* Collapsible raw input */}
-            {block.input && <AgentInputToggle parsedInput={parsedInput} rawInput={block.input} />}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // TodoWrite — pretty checklist renderer
-  if (block.toolName === 'TodoWrite' && Array.isArray(parsedInput?.todos)) {
-    const todos: Array<{ content: string; status: string; priority?: string; id?: string }> = parsedInput.todos
-    const completedCount = todos.filter(t => t.status === 'completed').length
-
-    return (
-      <div className="border border-[#21262d] rounded-lg overflow-hidden">
-        <button
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 w-full px-3 py-2 text-[12px] bg-[#161b22] hover:bg-[#1c2333] transition-colors"
-        >
-          {open ? <ChevronDown size={12} className="text-[#667085]" /> : <ChevronRight size={12} className="text-[#667085]" />}
-          <CheckCircle2 size={13} style={{ color: accentColor }} />
-          <span className="font-medium text-[#e6edf3]">TodoWrite</span>
-          <span className="text-[#667085] text-[11px]">{completedCount}/{todos.length} done</span>
-          <span className="ml-auto flex-shrink-0">
-            {block.done ? (
-              <CheckCircle2 size={13} className="text-[#22C55E]" />
-            ) : (
-              <TypingIndicatorMini accentColor={accentColor} />
-            )}
-          </span>
-        </button>
-        <div className="px-3 py-2 border-t border-[#21262d] bg-[#0d1117] space-y-1">
-          {todos.map((todo, i) => {
-            const isPending = todo.status === 'pending'
-            const isInProgress = todo.status === 'in_progress'
-            const isCompleted = todo.status === 'completed'
-            const icon = isPending ? '○' : isInProgress ? '◐' : '●'
-            return (
-              <div key={i} className="flex items-start gap-2 text-[12px]">
-                <span
-                  className="flex-shrink-0 mt-0.5 font-mono text-[13px]"
-                  style={{ color: isPending ? '#667085' : '#00FFA7' }}
-                >
-                  {icon}
-                </span>
-                <span
-                  className={isCompleted ? 'line-through opacity-60' : ''}
-                  style={{ color: isPending ? '#8b949e' : isCompleted ? '#8b949e' : '#e6edf3' }}
-                >
-                  {todo.content}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
-  // Regular tool card
-  const displayInfo = parsedInput
-    ? (parsedInput.command || parsedInput.file_path || parsedInput.path || parsedInput.pattern || parsedInput.description || '')
-    : ''
-
-  return (
-    <div className="border border-[#21262d] rounded-lg overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-[12px] bg-[#161b22] hover:bg-[#1c2333] transition-colors"
-      >
-        {open ? <ChevronDown size={12} className="text-[#667085]" /> : <ChevronRight size={12} className="text-[#667085]" />}
-        <FileCode size={13} style={{ color: accentColor }} />
-        <span className="font-medium text-[#e6edf3]">{block.toolName}</span>
-        {displayInfo && (
-          <span className="text-[#667085] truncate max-w-[300px] text-[11px] font-mono">{displayInfo}</span>
-        )}
-        <span className="ml-auto flex-shrink-0">
-          {block.done ? (
-            <CheckCircle2 size={13} className="text-[#22C55E]" />
-          ) : (
-            <TypingIndicatorMini accentColor={accentColor} />
-          )}
-        </span>
-      </button>
-      {open && block.input && (
-        <div className="px-3 py-2 border-t border-[#21262d] bg-[#0d1117]">
-          <pre className="text-[11px] text-[#8b949e] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
-            {parsedInput ? JSON.stringify(parsedInput, null, 2) : block.input}
-          </pre>
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface ApprovalCardProps {
-  req: PermissionRequest
+interface AgentChatTimelineProps {
+  agent: string
   accentColor: string
-  onAllow: () => void
-  onDeny: () => void
+  messages: ChatMessage[]
+  pendingApprovals: PermissionRequest[]
+  status: Status
+  isThinking: boolean
+  editingUuid: string | null
+  editingText: string
+  copiedIndex: number | null
+  scrollRef: React.RefObject<HTMLDivElement | null>
+  onCancelEdit: () => void
+  onCommitEdit: () => void
+  onEditingTextChange: (value: string) => void
+  onCopyMessage: (msg: ChatMessage, idx: number) => void
+  onStartEdit: (msg: ChatMessage) => void
+  onRespondToApproval: (requestId: string, approved: boolean) => void
+  getMessageText: (msg: ChatMessage) => string
 }
 
-function ApprovalCard({ req, accentColor, onAllow, onDeny }: ApprovalCardProps) {
-  let summary = ''
-  const inp = req.input as any
-  if (req.toolName === 'Bash') {
-    summary = inp?.command ? String(inp.command).slice(0, 120) : ''
-  } else if (req.toolName === 'Write') {
-    const lines = inp?.content ? String(inp.content).split('\n').slice(0, 5).join('\n') : ''
-    summary = inp?.file_path ? `${inp.file_path}${lines ? '\n' + lines : ''}` : lines
-  } else if (req.toolName === 'Edit') {
-    summary = inp?.file_path ? String(inp.file_path) : ''
-  } else if (req.toolName === 'Agent') {
-    const agentName = inp?.subagent_type || inp?.agent || ''
-    const prompt = inp?.prompt || inp?.description || ''
-    summary = agentName ? `@${agentName}${prompt ? ' — ' + String(prompt).slice(0, 80) : ''}` : String(prompt).slice(0, 100)
-  }
-  if (!summary && req.title) summary = req.title
-
+function AgentChatTimeline({
+  agent,
+  accentColor,
+  messages,
+  pendingApprovals,
+  status,
+  isThinking,
+  editingUuid,
+  editingText,
+  copiedIndex,
+  scrollRef,
+  onCancelEdit,
+  onCommitEdit,
+  onEditingTextChange,
+  onCopyMessage,
+  onStartEdit,
+  onRespondToApproval,
+  getMessageText,
+}: AgentChatTimelineProps) {
   return (
-    <div
-      className="rounded-lg border px-3 py-2.5 flex items-start gap-3"
-      style={{ background: '#161b22', borderColor: '#F59E0B30' }}
-    >
-      <ShieldAlert size={14} className="flex-shrink-0 mt-0.5" style={{ color: '#F59E0B' }} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-[11px] font-semibold text-[#e6edf3]">{req.toolName}</span>
-          {summary && (
-            <span className="text-[10px] text-[#8b949e] font-mono truncate max-w-[260px]">{summary}</span>
+    <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 sm:px-6 sm:py-6 sm:space-y-5">
+      {messages.length === 0 && (
+        <div className="flex flex-col items-center justify-center h-full text-center">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+            style={{ background: `${accentColor}15`, border: `1px solid ${accentColor}30` }}
+          >
+            <TermIcon size={24} style={{ color: accentColor }} />
+          </div>
+          <p className="text-[#e6edf3] font-medium text-sm mb-1">
+            Chat with @{agent}
+          </p>
+          <p className="text-[#667085] text-xs max-w-[300px]">
+            Type a message below to start a conversation. The agent has access to your workspace tools.
+          </p>
+        </div>
+      )}
+
+      {messages.map((msg, i) => (
+        <div key={i}>
+          {msg.role === 'user' && editingUuid && msg.uuid === editingUuid && (
+            <div className="flex justify-end">
+              <div className="w-full max-w-[88%] rounded-2xl border bg-[#1a2744] px-3 py-2 sm:max-w-[85%]" style={{ borderColor: accentColor + '60' }}>
+                <textarea
+                  value={editingText}
+                  onChange={(e) => onEditingTextChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      onCancelEdit()
+                    } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                      e.preventDefault()
+                      onCommitEdit()
+                    }
+                  }}
+                  autoFocus
+                  rows={Math.min(10, Math.max(2, editingText.split('\n').length))}
+                  className="w-full bg-transparent text-sm text-[#e6edf3] placeholder:text-[#667085] focus:outline-none resize-none"
+                />
+                <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-[#21262d]">
+                  <button
+                    onClick={onCancelEdit}
+                    className="px-3 py-1 rounded-md text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={onCommitEdit}
+                    disabled={!editingText.trim()}
+                    className="px-3 py-1 rounded-md text-xs border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      borderColor: `${accentColor}40`,
+                      background: `${accentColor}15`,
+                      color: accentColor,
+                    }}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {msg.role === 'user' && !(editingUuid && msg.uuid === editingUuid) && (
+            <div className="flex justify-end group/usermsg items-end gap-1">
+              <div className="flex items-center gap-0.5 opacity-0 group-hover/usermsg:opacity-100 transition-opacity mr-1">
+                <button
+                  onClick={() => onCopyMessage(msg, i)}
+                  className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-[#667085] hover:text-[#e6edf3] hover:bg-[#21262d]"
+                  title={copiedIndex === i ? 'Copied' : 'Copy message'}
+                >
+                  {copiedIndex === i ? <Check size={12} className="text-[#00FFA7]" /> : <Copy size={12} />}
+                </button>
+                {msg.uuid && status !== 'running' && !editingUuid && (
+                  <button
+                    onClick={() => onStartEdit(msg)}
+                    className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-[#667085] hover:text-[#e6edf3] hover:bg-[#21262d]"
+                    title="Edit message"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                )}
+              </div>
+              <div className="max-w-[88%] space-y-2 sm:max-w-[70%]">
+                {(msg as any).files && (msg as any).files.length > 0 && (
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    {(msg as any).files.map((f: FileRef, fi: number) => (
+                      f.previewUrl ? (
+                        <img
+                          key={fi}
+                          src={f.previewUrl}
+                          alt={f.name}
+                          className="w-24 h-24 object-cover rounded-xl border border-[#21262d]"
+                        />
+                      ) : (
+                        <div
+                          key={fi}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#21262d] bg-[#161b22]"
+                        >
+                          <FileIcon size={12} className="text-[#667085]" />
+                          <span className="text-[11px] text-[#8b949e] truncate max-w-[140px]">{f.name}</span>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                )}
+                {(msg as any).text && (
+                  <div className="px-4 py-2.5 rounded-2xl rounded-br-md bg-[#1a2744] border border-[#21262d] text-[#e6edf3] text-sm leading-relaxed">
+                    {(msg as any).text}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {msg.role === 'assistant' && (
+            <div className="flex gap-3 group/asstmsg">
+              <div className="flex-shrink-0 mt-0.5">
+                <AgentAvatar name={agent} size={28} />
+              </div>
+              <div className="flex-1 min-w-0 space-y-2">
+                {(msg as any).blocks.map((block: AssistantBlock, j: number) => (
+                  <div key={j}>
+                    {block.type === 'text' && (
+                      <div className="text-sm text-[#e6edf3] leading-relaxed prose-invert max-w-none">
+                        <Markdown>{block.text}</Markdown>
+                      </div>
+                    )}
+                    {block.type === 'tool_use' && (
+                      <ToolCard block={block} accentColor={accentColor} />
+                    )}
+                  </div>
+                ))}
+                {(msg as any).streaming && (() => {
+                  const blocks = (msg as any).blocks as AssistantBlock[]
+                  const hasVisibleContent = blocks.some((b) => b.type === 'text' || b.type === 'tool_use')
+                  return !hasVisibleContent
+                })() && (
+                  <TypingIndicator accentColor={accentColor} isThinking={isThinking} />
+                )}
+                {!(msg as any).streaming && getMessageText(msg) && (
+                  <div className="opacity-0 group-hover/asstmsg:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => onCopyMessage(msg, i)}
+                      className="flex items-center justify-center w-6 h-6 rounded-md text-[#667085] hover:text-[#e6edf3] hover:bg-[#21262d]"
+                      title={copiedIndex === i ? 'Copied' : 'Copy message'}
+                    >
+                      {copiedIndex === i ? <Check size={12} className="text-[#00FFA7]" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {msg.role === 'system' && (
+            <div className="text-center">
+              <span className="text-[11px] text-[#667085] bg-[#161b22] px-3 py-1 rounded-full border border-[#21262d]">
+                {msg.text}
+              </span>
+            </div>
           )}
         </div>
-        {req.description && (
-          <p className="text-[10px] text-[#667085] truncate">{req.description}</p>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <button
-          onClick={onAllow}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors"
-          style={{ background: `${accentColor}20`, color: accentColor, border: `1px solid ${accentColor}40` }}
-        >
-          <Check size={11} />
-          Allow
-        </button>
-        <button
-          onClick={onDeny}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors hover:bg-white/5"
-          style={{ background: 'transparent', color: '#8b949e', border: '1px solid #21262d' }}
-        >
-          <Ban size={11} />
-          Deny
-        </button>
-      </div>
-    </div>
-  )
-}
+      ))}
 
-function TypingIndicatorMini({ accentColor }: { accentColor: string }) {
-  return (
-    <span className="flex items-center gap-0.5">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="inline-block w-1 h-1 rounded-full"
-          style={{
-            backgroundColor: accentColor,
-            opacity: 0.7,
-            animation: `chat-bounce 1.4s ease-in-out infinite`,
-            animationDelay: `${i * 0.16}s`,
-          }}
+      {pendingApprovals.map((req) => (
+        <ApprovalCard
+          key={req.requestId}
+          req={req}
+          accentColor={accentColor}
+          onAllow={() => onRespondToApproval(req.requestId, true)}
+          onDeny={() => onRespondToApproval(req.requestId, false)}
         />
       ))}
-    </span>
+
+      {status === 'running' && messages[messages.length - 1]?.role !== 'assistant' && (
+        <div className="flex gap-3">
+          <div className="flex-shrink-0 mt-0.5">
+            <AgentAvatar name={agent} size={28} />
+          </div>
+          <TypingIndicator accentColor={accentColor} isThinking />
+        </div>
+      )}
+    </div>
   )
 }
 
+// â”€â”€ Sub-components â”€â”€
 // Suppress unused import warning
-void ImageIcon
+

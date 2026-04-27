@@ -6,7 +6,7 @@ import {
   Cloud, HardDrive, AlertCircle, CheckCircle, Loader2, FileArchive,
   ChevronDown, Eye, EyeOff, Save, Upload,
 } from 'lucide-react'
-import { api } from '../lib/api'
+import { api, XHR_HEADER } from '../lib/api'
 import { useTranslation } from 'react-i18next'
 
 interface BackupManifest {
@@ -338,6 +338,7 @@ export default function Backups() {
       const base = import.meta.env.DEV ? 'http://localhost:8080' : ''
       const res = await fetch(`${base}/api/backups/upload`, {
         method: 'POST',
+        headers: XHR_HEADER,
         credentials: 'include',
         body: formData,
       })

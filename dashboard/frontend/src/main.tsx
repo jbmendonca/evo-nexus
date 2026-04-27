@@ -6,6 +6,8 @@ import i18n from './i18n'
 import App from './App'
 import { ToastProvider } from './components/Toast'
 import { ConfirmProvider } from './components/ConfirmDialog'
+import { applyTheme, resolveInitialTheme } from './lib/theme'
+import { registerServiceWorker } from './lib/pwa'
 
 // Guarantee that i18n resources are registered before the first React
 // render. Without this, the first pass through <Setup/>, <Login/>, etc
@@ -26,6 +28,7 @@ function waitForI18n(): Promise<void> {
 }
 
 waitForI18n().then(() => {
+  applyTheme(resolveInitialTheme())
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <BrowserRouter>
@@ -37,4 +40,6 @@ waitForI18n().then(() => {
       </BrowserRouter>
     </StrictMode>,
   )
+
+  registerServiceWorker()
 })

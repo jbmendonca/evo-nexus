@@ -19,6 +19,13 @@ from routes._helpers import WORKSPACE
 bp = Blueprint("health", __name__)
 
 
+def _check_process() -> dict:
+    return {
+        "status": "ok",
+        "pid": os.getpid(),
+    }
+
+
 def _check_database() -> dict:
     try:
         db.session.execute(db.text("SELECT 1"))
@@ -70,11 +77,18 @@ def _check_provider_config() -> dict:
     except Exception as exc:
         return {"status": "error", "detail": f"Invalid providers.json: {exc}"[:200]}
 
-    active = raw.get("active") if isinstance(raw, dict) else None
+    active = None
+    routing = {}
+    if isinstance(raw, dict):
+        active = raw.get("active_provider") or raw.get("active")
+        routing = raw.get("routing") if isinstance(raw.get("routing"), dict) else {}
     if not active or active == "none":
         return {"status": "warning", "detail": "No active provider configured"}
 
-    return {"status": "ok", "active": active}
+    result = {"status": "ok", "active": active}
+    if routing.get("failover_order"):
+        result["failover_order"] = routing["failover_order"]
+    return result
 
 
 def _overall_status(checks: dict) -> str:
@@ -106,11 +120,28 @@ def _build_report(deep: bool = False) -> dict:
 
 @bp.route("/api/health")
 def health():
-    report = _build_report(deep=False)
+    report = _build_report(deep=True)
+    return jsonify(report), 200 if report["status"] != "error" else 503
+
+
+@bp.route("/api/health/live")
+def live_health():
+    report = {
+        "status": "ok",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": {
+            "process": _check_process(),
+        },
+    }
+    return jsonify(report), 200
+
+
+@bp.route("/api/health/ready")
+def ready_health():
+    report = _build_report(deep=True)
     return jsonify(report), 200 if report["status"] != "error" else 503
 
 
 @bp.route("/api/health/deep")
 def deep_health():
-    report = _build_report(deep=True)
-    return jsonify(report), 200 if report["status"] != "error" else 503
+    return ready_health()

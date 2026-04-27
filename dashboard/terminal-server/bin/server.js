@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+const { installStructuredConsole } = require('../src/utils/structured-logger');
+
+installStructuredConsole({ service: 'terminal-server', component: 'bootstrap' });
+
 const { startServer } = require('../src/server');
 
 const args = process.argv.slice(2);
@@ -11,7 +15,8 @@ const getFlag = (name) => {
 };
 
 const portArg = getFlag('--port');
-const port = portArg && portArg !== true ? parseInt(portArg, 10) : 32352;
+const envPort = parseInt(process.env.TERMINAL_SERVER_PORT || '32352', 10);
+const port = portArg && portArg !== true ? parseInt(portArg, 10) : envPort;
 const dev = args.includes('--dev');
 
 if (isNaN(port) || port < 1 || port > 65535) {

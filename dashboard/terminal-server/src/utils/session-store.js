@@ -10,6 +10,7 @@ class SessionStore {
         this.sessionsFile = path.join(this.storageDir, 'sessions.json');
         this.sessionTtlMs = options.sessionTtlMs ?? (24 * 60 * 60 * 1000);
         this.maxFileAgeDays = options.maxFileAgeDays ?? 7;
+        this._saveQueue = Promise.resolve();
         fsSync.mkdirSync(this.storageDir, { recursive: true });
         this.initializeStorage();
     }
@@ -24,6 +25,13 @@ class SessionStore {
     }
 
     async saveSessions(sessions) {
+        const previousSave = this._saveQueue;
+        let releaseSave;
+        this._saveQueue = new Promise((resolve) => {
+            releaseSave = resolve;
+        });
+        await previousSave;
+
         try {
             // Ensure storage directory exists
             await fs.mkdir(this.storageDir, { recursive: true });
@@ -81,6 +89,8 @@ class SessionStore {
         } catch (error) {
             console.error('Failed to save sessions:', error.message);
             return false;
+        } finally {
+            releaseSave?.();
         }
     }
 

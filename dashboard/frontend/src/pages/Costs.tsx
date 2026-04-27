@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { DollarSign, Zap, Activity, Calculator, Image, type LucideIcon } from 'lucide-react'
 import { api } from '../lib/api'
 import { useTranslation } from 'react-i18next'
+import { PageSkeleton } from '../components/PageStates'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, Legend,
@@ -104,15 +105,7 @@ function StatCard({
 
 // --- Skeleton ---
 function SkeletonCard() {
-  return (
-    <div className="rounded-2xl border border-[#21262d] bg-[#161b22] p-5">
-      <div className="flex items-start justify-between mb-3">
-        <div className="h-9 w-9 rounded-xl bg-[#21262d] animate-pulse" />
-      </div>
-      <div className="h-8 w-24 rounded bg-[#21262d] animate-pulse mb-2" />
-      <div className="h-4 w-20 rounded bg-[#21262d] animate-pulse" />
-    </div>
-  )
+  return <PageSkeleton cards={1} rows={0} />
 }
 
 interface ImageCostEntry {

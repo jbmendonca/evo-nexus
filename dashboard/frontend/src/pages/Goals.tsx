@@ -71,7 +71,12 @@ interface Mission {
 const API = import.meta.env.DEV ? 'http://localhost:8080' : ''
 
 async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(API + path, { credentials: 'include', ...opts })
+  const method = (opts?.method ?? 'GET').toUpperCase()
+  const headers = new Headers(opts?.headers || {})
+  if (method !== 'GET' && method !== 'HEAD') {
+    headers.set('X-Requested-With', 'XMLHttpRequest')
+  }
+  const res = await fetch(API + path, { credentials: 'include', ...opts, headers })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
 }

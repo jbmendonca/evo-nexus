@@ -28,11 +28,12 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from db_compat import connect_dashboard_db
+
 # Workspace root
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-DB_PATH = WORKSPACE / "dashboard" / "data" / "evonexus.db"
 LOGS_DIR = WORKSPACE / "ADWs" / "logs" / "heartbeats"
 AGENTS_DIR = WORKSPACE / ".claude" / "agents"
 
@@ -42,12 +43,7 @@ def _now_iso() -> str:
 
 
 def _get_db():
-    import sqlite3
-    conn = sqlite3.connect(str(DB_PATH), timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    return connect_dashboard_db(timeout=30)
 
 
 def _load_heartbeat(heartbeat_id: str) -> dict | None:
@@ -77,11 +73,23 @@ def _upsert_heartbeat_from_yaml(heartbeat_id: str) -> dict | None:
     conn = _get_db()
     try:
         conn.execute(
-            """INSERT OR REPLACE INTO heartbeats
+            """INSERT INTO heartbeats
                (id, agent, interval_seconds, max_turns, timeout_seconds,
                 lock_timeout_seconds, wake_triggers, enabled, goal_id,
                 required_secrets, decision_prompt, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 agent = excluded.agent,
+                 interval_seconds = excluded.interval_seconds,
+                 max_turns = excluded.max_turns,
+                 timeout_seconds = excluded.timeout_seconds,
+                 lock_timeout_seconds = excluded.lock_timeout_seconds,
+                 wake_triggers = excluded.wake_triggers,
+                 enabled = excluded.enabled,
+                 goal_id = excluded.goal_id,
+                 required_secrets = excluded.required_secrets,
+                 decision_prompt = excluded.decision_prompt,
+                 updated_at = excluded.updated_at""",
             (
                 hb.id, hb.agent, hb.interval_seconds, hb.max_turns,
                 hb.timeout_seconds, hb.lock_timeout_seconds,

@@ -8,7 +8,6 @@ Public API:
     start_health_check_thread(get_app_fn)    — background 5-min scheduler
 """
 
-import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
@@ -16,6 +15,7 @@ from typing import Any, Dict
 
 from sqlalchemy import text
 
+from db_compat import connect_dashboard_db
 from .connection_pool import get_engine
 
 _INTERVAL_S = 300  # 5 minutes
@@ -91,12 +91,14 @@ def _run_health_checks(get_app_fn) -> None:
             db_path = str(
                 Path(app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", ""))
             )
-            conn = sqlite3.connect(db_path)
+            conn = connect_dashboard_db(db_path)
             rows = conn.execute(
                 "SELECT id, connection_string_encrypted FROM knowledge_connections "
                 "WHERE status IN ('ready', 'needs_migration', 'disconnected')"
             ).fetchall()
-            for cid, cs_enc in rows:
+            for row in rows:
+                cid = row["id"]
+                cs_enc = row["connection_string_encrypted"]
                 if cs_enc is None:
                     continue
                 try:

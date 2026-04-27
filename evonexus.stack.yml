@@ -17,6 +17,10 @@
 ## Everything else (provider API keys, integration tokens, channel
 ## credentials) is configured through the dashboard UI after the first
 ## deploy. The stack intentionally ships with zero secrets.
+##
+## The optional PostgreSQL service below uses a placeholder password
+## (`REPLACE_ME`) so you can point DATABASE_URL at a managed database or
+## replace it with a real secret before production use.
 ## ============================================================================
 version: "3.7"
 
@@ -38,6 +42,13 @@ services:
     networks:
       - traefik-public
 
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
     environment:
       ## Infrastructure-only env vars. Everything else (Anthropic, OpenAI,
       ## Codex, Telegram, Stripe, Omie, Bling, Asaas, etc.) is configured
@@ -46,6 +57,7 @@ services:
       - TZ=America/Sao_Paulo
       - EVONEXUS_PORT=8080
       - TERMINAL_SERVER_PORT=32352
+      - DATABASE_URL=postgresql+psycopg2://evonexus:REPLACE_ME@evonexus_postgres:5432/evonexus
       - FORWARDED_ALLOW_IPS=*
 
     deploy:
@@ -82,6 +94,30 @@ services:
         - traefik.http.middlewares.evonexus_terminal_strip.stripprefix.prefixes=/terminal
         - traefik.http.services.evonexus_terminal.loadbalancer.server.port=32352
         - traefik.http.services.evonexus_terminal.loadbalancer.passHostHeader=true
+
+  evonexus_postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: evonexus
+      POSTGRES_USER: evonexus
+      POSTGRES_PASSWORD: REPLACE_ME
+    volumes:
+      - evonexus_postgres_data:/var/lib/postgresql/data
+    networks:
+      - traefik-public
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evonexus -d evonexus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
 
   evonexus_telegram:
     image: ghcr.io/OWNER/evo-nexus-runtime:latest  ## replace OWNER
@@ -154,6 +190,7 @@ volumes:
   evonexus_config:
   evonexus_workspace:
   evonexus_dashboard_data:
+  evonexus_postgres_data:
   evonexus_memory:
   evonexus_adw_logs:
   evonexus_agent_memory:

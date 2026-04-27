@@ -1,5 +1,17 @@
 {
   "active_provider": "anthropic",
+  "routing": {
+    "enabled": true,
+    "failover_order": [
+      "anthropic",
+      "openrouter",
+      "openai",
+      "codex_auth",
+      "gemini",
+      "bedrock",
+      "vertex"
+    ]
+  },
   "providers": {
     "anthropic": {
       "name": "Anthropic (Claude nativo)",

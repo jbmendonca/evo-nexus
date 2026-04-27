@@ -5,7 +5,9 @@ const {
   loadProviderConfig,
   resolveProviderModel,
   getProviderMode,
+  getProviderCandidates,
 } = require('./provider-config');
+const { recordProviderEvent } = require('./platform-metrics');
 
 class ClaudeBridge {
   constructor() {
@@ -103,11 +105,26 @@ class ClaudeBridge {
     } = options;
 
     try {
-      // Reload provider config fresh on every session start
-      // so switching provider in the dashboard takes effect immediately
-      const providerConfig = this._loadProviderConfig();
+      // Reload provider config fresh on every session start so switching
+      // provider in the dashboard takes effect immediately.
+      const activeProviderConfig = this._loadProviderConfig();
+      const providerCandidates = getProviderCandidates('code', activeProviderConfig.provider_id || activeProviderConfig.active);
+      const providerConfig = providerCandidates[0] || activeProviderConfig;
       const providerMode = getProviderMode(providerConfig);
       const providerModel = resolveProviderModel(providerConfig);
+
+      if (providerConfig.provider_id && providerConfig.provider_id !== activeProviderConfig.provider_id) {
+        recordProviderEvent({
+          providerId: providerConfig.provider_id,
+          event: 'failover_selected',
+          mode: providerMode,
+          detail: `selected after ${activeProviderConfig.provider_id || 'unknown'} was unavailable`,
+          success: true,
+          metadata: {
+            preferred: activeProviderConfig.provider_id || activeProviderConfig.active,
+          },
+        });
+      }
 
       // Block session if no provider is active
       if (!providerConfig.active || providerConfig.active === 'none') {
@@ -123,6 +140,13 @@ class ClaudeBridge {
       }
 
       const cliCommand = this.findClaudeCommand(providerConfig.cli_command);
+      recordProviderEvent({
+        providerId: providerConfig.provider_id || providerConfig.active,
+        event: 'terminal_start',
+        mode: providerMode,
+        model: providerModel || null,
+        success: true,
+      });
 
       console.log(`Starting session ${sessionId} with ${providerConfig.cli_command}`);
       console.log(`Command: ${cliCommand}`);
@@ -292,6 +316,15 @@ class ClaudeBridge {
 
     } catch (error) {
       console.error(`Failed to start Claude session ${sessionId}:`, error);
+      try {
+        const providerConfig = this._loadProviderConfig();
+        recordProviderEvent({
+          providerId: providerConfig.provider_id || providerConfig.active,
+          event: 'terminal_start',
+          success: false,
+          detail: error.message,
+        });
+      } catch {}
       throw new Error(`Failed to start Claude Code: ${error.message}`);
     }
   }

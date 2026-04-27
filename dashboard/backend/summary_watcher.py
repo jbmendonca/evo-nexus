@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+from db_compat import connect_dashboard_db
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent.parent
 LOGS_DIR = WORKSPACE / "ADWs" / "logs" / "chat"
@@ -75,15 +76,11 @@ def _enqueue_summary(ticket_id: str, memory_md_path: str, up_to_turn: int) -> No
 
 def run_watcher() -> dict:
     """Main logic — returns stats dict."""
-    db_path = WORKSPACE / "dashboard" / "data" / "evonexus.db"
-    if not db_path.exists():
-        return {"error": f"DB not found: {db_path}"}
-
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
     stats = {"checked": 0, "updated": 0, "queued": 0, "skipped": 0}
+    conn = None
 
     try:
+        conn = connect_dashboard_db(timeout=30)
         rows = conn.execute(
             "SELECT id, assignee_agent, thread_session_id, memory_md_path, "
             "message_count, last_summary_at_message "
@@ -156,7 +153,11 @@ def run_watcher() -> dict:
                     stats["queued"] += 1
 
     finally:
-        conn.close()
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
 
     return stats
 

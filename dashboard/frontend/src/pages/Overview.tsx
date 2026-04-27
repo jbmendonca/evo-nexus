@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import HealthBadge from '../components/HealthBadge'
+import { PageSkeleton } from '../components/PageStates'
 
 interface OverviewData {
   metrics: {
@@ -100,11 +101,11 @@ function relativeTime(dateStr: string): string {
 
 // --- Skeleton Components ---
 function SkeletonCard() {
-  return <div className="skeleton h-32 rounded-2xl" />
+  return <PageSkeleton cards={1} rows={0} />
 }
 
 function SkeletonRow() {
-  return <div className="skeleton h-14 rounded-lg mb-2" />
+  return <PageSkeleton cards={0} rows={1} />
 }
 
 function SkeletonPill() {

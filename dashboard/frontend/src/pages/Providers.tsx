@@ -16,6 +16,12 @@ interface Provider {
 interface ProvidersResponse {
   providers: Provider[]; active_provider: string
   claude_installed: boolean; openclaude_installed: boolean
+  routing?: { enabled: boolean; failover_order: string[] }
+}
+
+interface RoutingResponse {
+  routing: { enabled: boolean; failover_order: string[] }
+  available_providers: string[]
 }
 
 const ENV_VAR_LABELS: Record<string, string> = {
@@ -186,6 +192,10 @@ export default function Providers() {
   const [claudeInstalled, setClaudeInstalled] = useState(false)
   const [openclaudeInstalled, setOpenclaudeInstalled] = useState(false)
   const [codexAuth, setCodexAuth] = useState<{ authenticated: boolean; method?: string } | null>(null)
+  const [routingEnabled, setRoutingEnabled] = useState(true)
+  const [routingOrder, setRoutingOrder] = useState('')
+  const [routingSaving, setRoutingSaving] = useState(false)
+  const [routingMessage, setRoutingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [authModal, setAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'browser' | 'device'>('browser')
   const [authUrl, setAuthUrl] = useState('')
@@ -207,14 +217,24 @@ export default function Providers() {
   const [modelLists, setModelLists] = useState<Record<string, ModelList>>({})
   const apiKeyDebounceRef = useRef<number | null>(null)
 
-  const load = () => {
+  const load = async () => {
     setLoading(true)
-    api.get('/providers').then((data: ProvidersResponse) => {
+    try {
+      const [data, routingData] = (await Promise.all([
+        api.get('/providers'),
+        api.get('/providers/routing'),
+      ])) as [ProvidersResponse, RoutingResponse]
       setProviders(data.providers || [])
       setActiveProvider(data.active_provider || 'none')
       setClaudeInstalled(data.claude_installed)
       setOpenclaudeInstalled(data.openclaude_installed)
-    }).catch(() => setProviders([])).finally(() => setLoading(false))
+      setRoutingEnabled(routingData?.routing?.enabled ?? true)
+      setRoutingOrder((routingData?.routing?.failover_order || []).join(', '))
+    } catch {
+      setProviders([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load(); loadCodexAuth() }, [])
@@ -232,6 +252,31 @@ export default function Providers() {
       load()
     } catch (e) { console.error(e) }
     finally { setToggling(null) }
+  }
+
+  const handleSaveRouting = async () => {
+    setRoutingSaving(true)
+    setRoutingMessage(null)
+    try {
+      const order = routingOrder
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+      const result = await api.post('/providers/routing', {
+        routing: {
+          enabled: routingEnabled,
+          failover_order: order,
+        },
+      }) as RoutingResponse
+      setRoutingEnabled(result.routing.enabled)
+      setRoutingOrder((result.routing.failover_order || []).join(', '))
+      setRoutingMessage({ type: 'success', text: 'Routing order saved' })
+      load()
+    } catch {
+      setRoutingMessage({ type: 'error', text: 'Failed to save routing' })
+    } finally {
+      setRoutingSaving(false)
+    }
   }
 
   const openConfig = (prov: Provider) => {
@@ -384,6 +429,55 @@ export default function Providers() {
               {hasActive ? '1 active' : 'none active'}
             </span>
           </div>
+        </div>
+      )}
+
+      {!loading && (
+        <div className="mb-6 rounded-lg border border-[#152030] bg-[#0b1018] px-5 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-white">Failover routing</h2>
+              <p className="text-[11px] text-[#5a6b7f]">
+                Ordered fallback used by the terminal server and chat providers.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] uppercase tracking-wide text-[#5a6b7f]">Enabled</span>
+              <Toggle on={routingEnabled} onChange={setRoutingEnabled} />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+            <input
+              type="text"
+              value={routingOrder}
+              onChange={(e) => setRoutingOrder(e.target.value)}
+              placeholder="anthropic, openrouter, openai, codex_auth"
+              className="w-full rounded-lg border border-[#1e2a3a] bg-[#0f1520] px-4 py-3 font-mono text-sm text-[#e2e8f0] placeholder-[#3d4f65] focus:border-[#00FFA7]/60 focus:outline-none focus:ring-1 focus:ring-[#00FFA7]/20"
+            />
+            <button
+              type="button"
+              onClick={handleSaveRouting}
+              disabled={routingSaving}
+              className="rounded-lg bg-[#00FFA7] px-4 py-3 text-sm font-semibold text-[#080c14] transition-colors hover:bg-[#00e69a] disabled:opacity-40"
+            >
+              {routingSaving ? 'Saving...' : 'Save routing'}
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-[#5a6b7f]">
+            {(routingOrder.split(',').map((item) => item.trim()).filter(Boolean)).map((item) => (
+              <span key={item} className="rounded-full border border-[#1e2a3a] bg-[#0f1520] px-2.5 py-1">
+                {item}
+              </span>
+            ))}
+          </div>
+
+          {routingMessage && (
+            <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${routingMessage.type === 'success' ? 'bg-[#00FFA7]/5 text-[#00FFA7]' : 'bg-[#1a0a0a] text-[#f87171]'}`}>
+              {routingMessage.text}
+            </div>
+          )}
         </div>
       )}
 

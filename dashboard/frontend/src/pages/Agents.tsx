@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { AgentAvatar } from '../components/AgentAvatar'
+import { PageSkeleton } from '../components/PageStates'
 
 type Category = 'business' | 'engineering' | 'custom'
 type EngTier = 'reasoning' | 'execution' | 'speed'
@@ -446,24 +447,7 @@ function AgentCard({ agent, isRunning }: { agent: Agent; isRunning: boolean }) {
 }
 
 function SkeletonCard() {
-  return (
-    <div className="rounded-xl border border-[#21262d] bg-[#161b22] p-5">
-      <div className="flex items-start justify-between mb-4">
-        <div className="h-10 w-10 rounded-lg bg-[#21262d] animate-pulse" />
-        <div className="h-2 w-2 rounded-full bg-[#21262d] animate-pulse" />
-      </div>
-      <div className="h-4 w-32 rounded bg-[#21262d] animate-pulse mb-2" />
-      <div className="h-3 w-16 rounded bg-[#21262d] animate-pulse mb-3" />
-      <div className="space-y-1.5 mb-4">
-        <div className="h-3 w-full rounded bg-[#21262d] animate-pulse" />
-        <div className="h-3 w-2/3 rounded bg-[#21262d] animate-pulse" />
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="h-6 w-16 rounded-md bg-[#21262d] animate-pulse" />
-        <div className="h-6 w-12 rounded-full bg-[#21262d] animate-pulse" />
-      </div>
-    </div>
-  )
+  return <PageSkeleton cards={1} rows={0} />
 }
 
 function OracleHeroCard({ agent, isRunning }: { agent: Agent; isRunning: boolean }) {

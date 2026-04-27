@@ -73,7 +73,7 @@ interface AuthContextType {
   agentAccess: AgentAccess
   workspaceFolders: WorkspaceFolders
   needsSetup: boolean
-  login: (username: string, password: string) => Promise<void>
+  login: (username: string, password: string, totpCode?: string) => Promise<void>
   logout: () => Promise<void>
   hasPermission: (resource: string, action: string) => boolean
   hasAgentAccess: (agentName: string) => boolean
@@ -137,8 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshUser().finally(() => setLoading(false))
   }, [refreshUser])
 
-  const login = useCallback(async (username: string, password: string) => {
-    const res = await api.post('/auth/login', { username, password })
+  const login = useCallback(async (username: string, password: string, totpCode?: string) => {
+    const payload: Record<string, string> = { username, password }
+    if (totpCode?.trim()) payload.totp_code = totpCode.trim()
+    const res = await api.post('/auth/login', payload)
     setUser(res.user)
     await refreshUser()
   }, [refreshUser])

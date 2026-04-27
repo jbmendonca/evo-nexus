@@ -77,6 +77,24 @@ def test_health_endpoint_reports_ok(client):
     assert payload["checks"]["secret_key"]["status"] == "ok"
 
 
+def test_live_health_endpoint(client):
+    response = client.get("/api/health/live")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "ok"
+    assert payload["checks"]["process"]["status"] == "ok"
+
+
+def test_ready_health_endpoint_includes_providers(client):
+    response = client.get("/api/health/ready")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["checks"]["providers"]["status"] == "ok"
+    assert payload["checks"]["providers"]["active"] == "anthropic"
+
+
 def test_deep_health_includes_providers(client):
     response = client.get("/api/health/deep")
     payload = response.get_json()

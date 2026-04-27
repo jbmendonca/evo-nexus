@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Upload as UploadIcon, X, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useKnowledge } from '../../context/KnowledgeContext'
+import { XHR_HEADER } from '../../lib/api'
 
 const API = import.meta.env.DEV ? 'http://localhost:8080' : ''
 
@@ -165,7 +166,7 @@ export default function KnowledgeUpload() {
 
         const res = await fetch(
           `${API}/api/knowledge/connections/${activeConnectionId}/documents`,
-          { method: 'POST', body: formData, credentials: 'include' }
+          { method: 'POST', body: formData, credentials: 'include', headers: XHR_HEADER }
         )
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))

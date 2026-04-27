@@ -11,30 +11,25 @@ from __future__ import annotations
 
 import os
 import secrets
-import sqlite3
 import uuid
 from base64 import urlsafe_b64encode
 from datetime import datetime, timezone
 from typing import Any
 
 import bcrypt
+from db_compat import connect_dashboard_db
+from runtime_config import database_uri as resolve_database_uri
 
 # ---------------------------------------------------------------------------
 # DB path helpers — mirrors app.py's resolution so both use the same file.
 # ---------------------------------------------------------------------------
 
 def _db_path() -> str:
-    # Reuse the single source of truth so we never drift from app.py / get_dsn.
-    from knowledge.connection_pool import _resolve_sqlite_db_path
-    return _resolve_sqlite_db_path()
+    return resolve_database_uri()
 
 
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path())
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def _connect():
+    return connect_dashboard_db(_db_path())
 
 
 # ---------------------------------------------------------------------------
@@ -225,9 +220,9 @@ def verify_token(bearer: str) -> dict[str, Any] | None:
             """
             SELECT * FROM knowledge_api_keys
             WHERE prefix = ?
-              AND (expires_at IS NULL OR expires_at > datetime('now'))
+              AND (expires_at IS NULL OR expires_at > ?)
             """,
-            (prefix,),
+            (prefix, _now()),
         ).fetchall()
 
     for row in rows:

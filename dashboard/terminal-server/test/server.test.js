@@ -114,3 +114,91 @@ test('TerminalServer purges stale sessions and reports health', async () => {
 
   server.close();
 });
+
+test('TerminalServer closes stale WebSocket connections after heartbeat timeout', async () => {
+  const tempDir = makeTempDir('evonexus-terminal-ws-');
+  const server = new TerminalServer({
+    port: 0,
+    dev: false,
+    baseFolder: tempDir,
+    sessionTtlMs: 1000,
+    sessionGcIntervalMs: 0,
+    autoSaveIntervalMs: 0,
+    wsHeartbeatTimeoutMs: 1000,
+    wsHeartbeatSweepIntervalMs: 0,
+  });
+
+  await server.ready;
+
+  const wsId = 'ws-1';
+  let terminated = false;
+  const ws = {
+    readyState: 1,
+    terminate: () => {
+      terminated = true;
+    },
+  };
+
+  server.claudeSessions = new Map([
+    ['session-1', {
+      id: 'session-1',
+      name: 'Session 1',
+      created: new Date(),
+      lastActivity: new Date(),
+      active: false,
+      archived: false,
+      connections: new Set([wsId]),
+    }],
+  ]);
+  server.webSocketConnections.set(wsId, {
+    id: wsId,
+    ws,
+    claudeSessionId: 'session-1',
+    created: new Date(),
+    lastHeartbeatAt: Date.now() - 5000,
+    remoteAddress: '127.0.0.1',
+  });
+
+  const result = await server.purgeStaleWebSocketConnections();
+  const auditLogPath = path.join(tempDir, 'workspace', 'ADWs', 'logs', 'terminal-audit.jsonl');
+
+  assert.equal(result.closed, 1);
+  assert.equal(terminated, true);
+  assert.equal(server.webSocketConnections.has(wsId), false);
+  assert.equal(server.claudeSessions.get('session-1').connections.size, 0);
+  assert.equal(fs.existsSync(auditLogPath), true);
+  const auditEntries = fs.readFileSync(auditLogPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(auditEntries.some((entry) => entry.action === 'ws_timeout'), true);
+
+  server.close();
+});
+
+test('TerminalServer tracks platform events in health snapshots', async () => {
+  const tempDir = makeTempDir('evonexus-terminal-platform-');
+  const server = new TerminalServer({
+    port: 0,
+    dev: false,
+    baseFolder: tempDir,
+    sessionTtlMs: 1000,
+    sessionGcIntervalMs: 0,
+    autoSaveIntervalMs: 0,
+    wsHeartbeatTimeoutMs: 1000,
+    wsHeartbeatSweepIntervalMs: 0,
+  });
+
+  await server.ready;
+  server.handlePlatformEvent({
+    ts: new Date().toISOString(),
+    topic: 'provider-routing-updated',
+    source: 'dashboard',
+    payload: { enabled: true },
+  });
+
+  const health = server.getHealthSnapshot(true);
+
+  assert.equal(server.platformEvents.length, 1);
+  assert.equal(health.counts.platformEvents, 1);
+  assert.equal(health.status, 'ok');
+
+  server.close();
+});

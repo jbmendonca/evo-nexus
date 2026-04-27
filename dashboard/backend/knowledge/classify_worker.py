@@ -37,6 +37,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from db_compat import connect_dashboard_db
+
 log = logging.getLogger("classify_worker")
 
 _POLL_INTERVAL = int(os.environ.get("KNOWLEDGE_CLASSIFY_POLL_INTERVAL", "10"))
@@ -161,14 +163,13 @@ def _classify_document(content_sample: str) -> Optional[Dict[str, Any]]:
 
 def _get_connections(sqlite_db_path: str) -> List[Dict[str, Any]]:
     """Return all 'ready' Knowledge connections from SQLite."""
-    import sqlite3
-    conn = sqlite3.connect(sqlite_db_path)
+    conn = connect_dashboard_db(sqlite_db_path)
     try:
         cur = conn.execute(
             "SELECT id, connection_string_encrypted FROM knowledge_connections WHERE status = 'ready'"
         )
         rows = cur.fetchall()
-        return [{"id": row[0], "cs_enc": row[1]} for row in rows]
+        return [{"id": row["id"], "cs_enc": row["connection_string_encrypted"]} for row in rows]
     except Exception:
         return []
     finally:

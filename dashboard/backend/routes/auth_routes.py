@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from functools import wraps
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify, abort, session
 from flask_login import login_user, logout_user, login_required, current_user
 from models import db, User, AuditLog, Role, has_permission, audit, needs_setup, get_role_permissions, get_role_agent_access, get_role_workspace_folders, ALL_RESOURCES, AGENT_LAYERS
 from auth_security import (
@@ -12,6 +12,9 @@ from auth_security import (
     password_policy_violations,
     record_login_failure,
 )
+from session_security import force_rotate_session_token, issue_session_token
+from totp_security import generate_totp_secret, provisioning_uri, verify_totp_code, normalize_totp_code
+from request_security import require_xhr
 
 bp = Blueprint("auth", __name__)
 
@@ -47,6 +50,33 @@ def _as_text(value) -> str:
     return "" if value is None else str(value)
 
 
+def _require_xhr():
+    require_xhr(request)
+
+
+def _totp_is_required(user: User) -> bool:
+    return bool(user and user.totp_enabled and user.totp_secret)
+
+
+def _require_totp_code(user: User, code: str | None):
+    if not _totp_is_required(user):
+        return None
+
+    normalized_code = normalize_totp_code(code)
+    if not normalized_code:
+        return jsonify({"error": "Two-factor code required", "requires_totp": True}), 412
+
+    result = verify_totp_code(
+        user.totp_secret or "",
+        normalized_code,
+        last_used_step=user.totp_last_used_step,
+    )
+    if not result["valid"]:
+        return jsonify({"error": "Invalid two-factor code", "requires_totp": True}), 401
+
+    return int(result["step"]) if result["step"] is not None else None
+
+
 # ── Setup (first run only) ───────────────────────────
 
 @bp.route("/api/auth/needs-setup")
@@ -56,6 +86,7 @@ def check_setup():
 
 @bp.route("/api/auth/setup", methods=["POST"])
 def setup():
+    _require_xhr()
     if not needs_setup():
         abort(404, description="Setup already completed")
 
@@ -90,6 +121,7 @@ def setup():
     db.session.commit()
 
     login_user(user, remember=True)
+    force_rotate_session_token()
     user.last_login = datetime.now(timezone.utc)
     db.session.commit()
 
@@ -107,7 +139,7 @@ def setup():
     except Exception:
         pass  # Never block setup if licensing server is offline
 
-    return jsonify({"user": user.to_dict(), "message": "Setup complete"})
+    return jsonify({"user": user.to_dict(), "message": "Setup complete", "csrf_token": issue_session_token()})
 
 
 def _save_workspace_config(ws: dict):
@@ -161,16 +193,24 @@ def _save_workspace_config(ws: dict):
         (WORKSPACE / folder).mkdir(exist_ok=True)
 
 
+@bp.route("/api/auth/csrf")
+def auth_csrf():
+    token = issue_session_token(force=False)
+    return jsonify({"csrf_token": token})
+
+
 # ── Login / Logout ───────────────────────────────────
 
 @bp.route("/api/auth/login", methods=["POST"])
 def login():
+    _require_xhr()
     data = request.get_json()
     if not data:
         abort(400)
 
     username = _as_text(data.get("username")).strip()
     password = _as_text(data.get("password"))
+    totp_code = _as_text(data.get("totp_code")).strip()
     normalized_username = normalize_login_key(username)
 
     if not username or not password:
@@ -208,8 +248,17 @@ def login():
         db.session.commit()
         abort(401, description="Invalid username or password")
 
+    totp_step = None
+    totp_requirement = _require_totp_code(user, totp_code)
+    if isinstance(totp_requirement, tuple):
+        return totp_requirement
+    totp_step = totp_requirement
+
     login_user(user, remember=True)
+    force_rotate_session_token()
     user.last_login = datetime.now(timezone.utc)
+    if totp_step is not None:
+        user.totp_last_used_step = totp_step
     clear_login_throttles(normalized_username, request.remote_addr)
     db.session.commit()
 
@@ -226,15 +275,19 @@ def login():
     except Exception:
         pass
 
-    return jsonify({"user": user.to_dict()})
+    return jsonify({"user": user.to_dict(), "csrf_token": issue_session_token()})
 
 
 @bp.route("/api/auth/logout", methods=["POST"])
 @login_required
 def logout():
+    _require_xhr()
     audit(current_user, "logout")
     logout_user()
-    return jsonify({"message": "Logged out"})
+    session.pop("totp_setup_secret", None)
+    session.pop("totp_setup_user", None)
+    force_rotate_session_token()
+    return jsonify({"message": "Logged out", "csrf_token": issue_session_token()})
 
 
 @bp.route("/api/auth/me")
@@ -248,24 +301,124 @@ def me():
         "permissions": perms,
         "agent_access": agent_access,
         "workspace_folders": workspace_folders,
+        "csrf_token": issue_session_token(),
     })
 
 
 @bp.route("/api/auth/change-password", methods=["POST"])
 @login_required
 def change_password():
+    _require_xhr()
     data = request.get_json() or {}
     old_pw = _as_text(data.get("old_password"))
     new_pw = _as_text(data.get("new_password"))
+    totp_code = _as_text(data.get("totp_code")).strip()
 
     if not current_user.check_password(old_pw):
         abort(400, description="Current password is incorrect")
+    totp_requirement = _require_totp_code(current_user, totp_code)
+    if isinstance(totp_requirement, tuple):
+        return totp_requirement
     _require_password_strength(new_pw, username=current_user.username, email=current_user.email or "")
 
     current_user.set_password(new_pw)
     db.session.commit()
     audit(current_user, "password_changed", f"user:{current_user.id}")
-    return jsonify({"message": "Password changed"})
+    force_rotate_session_token()
+    return jsonify({"message": "Password changed", "csrf_token": issue_session_token()})
+
+
+@bp.route("/api/auth/2fa/status")
+@login_required
+@require_permission("config", "view")
+def two_factor_status():
+    enrollment_secret = session.get("totp_setup_secret")
+    enrollment_user = session.get("totp_setup_user")
+    return jsonify({
+        "enabled": bool(current_user.totp_enabled and current_user.totp_secret),
+        "configured": bool(current_user.totp_secret),
+        "confirmed_at": current_user.totp_confirmed_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ") if current_user.totp_confirmed_at else None,
+        "last_used_step": current_user.totp_last_used_step,
+        "enrollment_pending": bool(enrollment_secret),
+        "enrollment_user": enrollment_user,
+        "csrf_token": issue_session_token(),
+    })
+
+
+@bp.route("/api/auth/2fa/setup", methods=["POST"])
+@login_required
+@require_permission("config", "manage")
+def two_factor_setup():
+    _require_xhr()
+    secret = generate_totp_secret()
+    session["totp_setup_secret"] = secret
+    session["totp_setup_user"] = current_user.username
+    return jsonify({
+        "secret": secret,
+        "otpauth_uri": provisioning_uri(secret, current_user.username),
+        "issuer": "EvoNexus",
+        "account_name": current_user.username,
+        "csrf_token": issue_session_token(),
+    })
+
+
+@bp.route("/api/auth/2fa/confirm", methods=["POST"])
+@login_required
+@require_permission("config", "manage")
+def two_factor_confirm():
+    _require_xhr()
+    data = request.get_json(silent=True) or {}
+    code = _as_text(data.get("code")).strip()
+    secret = _as_text(session.get("totp_setup_secret"))
+    if not secret:
+        abort(400, description="No pending 2FA enrollment")
+
+    result = verify_totp_code(secret, code)
+    if not result["valid"] or result["step"] is None:
+        abort(400, description="Invalid verification code")
+
+    current_user.enable_totp(secret, last_used_step=int(result["step"]))
+    session.pop("totp_setup_secret", None)
+    session.pop("totp_setup_user", None)
+    db.session.commit()
+    audit(current_user, "totp_enabled", f"user:{current_user.id}")
+    force_rotate_session_token()
+    return jsonify({
+        "status": "ok",
+        "message": "Two-factor authentication enabled",
+        "user": current_user.to_dict(),
+        "csrf_token": issue_session_token(),
+    })
+
+
+@bp.route("/api/auth/2fa/disable", methods=["POST"])
+@login_required
+@require_permission("config", "manage")
+def two_factor_disable():
+    _require_xhr()
+    data = request.get_json(silent=True) or {}
+    password = _as_text(data.get("password"))
+    code = _as_text(data.get("totp_code")).strip()
+
+    if not current_user.check_password(password):
+        abort(400, description="Current password is incorrect")
+
+    totp_requirement = _require_totp_code(current_user, code)
+    if isinstance(totp_requirement, tuple):
+        return totp_requirement
+
+    current_user.disable_totp()
+    session.pop("totp_setup_secret", None)
+    session.pop("totp_setup_user", None)
+    db.session.commit()
+    audit(current_user, "totp_disabled", f"user:{current_user.id}")
+    force_rotate_session_token()
+    return jsonify({
+        "status": "ok",
+        "message": "Two-factor authentication disabled",
+        "user": current_user.to_dict(),
+        "csrf_token": issue_session_token(),
+    })
 
 
 # ── Users (admin only) ───────────────────────────────
@@ -282,6 +435,7 @@ def list_users():
 @login_required
 @require_permission("users", "manage")
 def create_user():
+    _require_xhr()
     data = request.get_json() or {}
     username = _as_text(data.get("username")).strip()
     password = _as_text(data.get("password"))
@@ -315,6 +469,7 @@ def create_user():
 @login_required
 @require_permission("users", "manage")
 def update_user(user_id):
+    _require_xhr()
     user = User.query.get_or_404(user_id)
     data = request.get_json() or {}
 
@@ -344,6 +499,7 @@ def update_user(user_id):
 @login_required
 @require_permission("users", "manage")
 def deactivate_user(user_id):
+    _require_xhr()
     if user_id == current_user.id:
         abort(400, description="Cannot deactivate yourself")
     user = User.query.get_or_404(user_id)
@@ -433,6 +589,7 @@ def list_workspace_folders():
 @login_required
 @require_permission("users", "manage")
 def create_role():
+    _require_xhr()
     data = request.get_json()
     name = data.get("name", "").strip().lower()
     description = data.get("description", "").strip()
@@ -460,6 +617,7 @@ def create_role():
 @login_required
 @require_permission("users", "manage")
 def update_role(role_id):
+    _require_xhr()
     role = Role.query.get_or_404(role_id)
     data = request.get_json()
 
@@ -489,6 +647,7 @@ def update_role(role_id):
 @login_required
 @require_permission("users", "manage")
 def delete_role(role_id):
+    _require_xhr()
     role = Role.query.get_or_404(role_id)
     if role.is_builtin:
         abort(400, description="Cannot delete built-in roles")

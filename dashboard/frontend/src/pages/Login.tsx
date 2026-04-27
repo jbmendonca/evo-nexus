@@ -82,6 +82,7 @@ export default function Login() {
   const { login } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [totpCode, setTotpCode] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -94,7 +95,7 @@ export default function Login() {
     }
     setSubmitting(true)
     try {
-      await login(username.trim(), password)
+      await login(username.trim(), password, totpCode.trim() || undefined)
     } catch (ex: unknown) {
       setError(ex instanceof Error ? ex.message : 'Login failed')
     } finally {
@@ -138,6 +139,19 @@ export default function Login() {
                 <label className={lbl}>{t('login.password')}</label>
                 <input type="password" value={password} onChange={e => setPassword(e.target.value)}
                   className={inp} placeholder={t('login.password')} autoComplete="current-password" />
+              </div>
+              <div>
+                <label className={lbl}>Authenticator code</label>
+                <input
+                  type="text"
+                  value={totpCode}
+                  onChange={e => setTotpCode(e.target.value)}
+                  className={inp}
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                />
+                <p className="mt-1 text-[11px] text-[#4a5a6e]">Required only if two-factor authentication is enabled.</p>
               </div>
 
               <button type="submit" disabled={submitting}

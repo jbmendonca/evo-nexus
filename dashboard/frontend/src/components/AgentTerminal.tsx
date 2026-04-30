@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
+import { TS_HTTP, TS_WS } from '../lib/terminal-url'
 
 interface AgentTerminalProps {
   agent: string
@@ -11,17 +12,8 @@ interface AgentTerminalProps {
   accentColor?: string
 }
 
-// In dev mode OR local production (localhost/127.0.0.1), connect directly to terminal-server port.
-// In real deployments (behind reverse proxy), use /terminal path on the same origin.
-const isLocal = import.meta.env.DEV || /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
-
-const CC_WEB_HTTP = isLocal
-  ? `http://${window.location.hostname}:32352`
-  : `${window.location.origin}/terminal`
-
-const CC_WEB_WS = isLocal
-  ? `ws://${window.location.hostname}:32352`
-  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/terminal`
+const CC_WEB_HTTP = TS_HTTP
+const CC_WEB_WS = TS_WS
 
 type Status = 'connecting' | 'ready' | 'starting' | 'running' | 'error' | 'exited'
 
@@ -32,6 +24,8 @@ export default function AgentTerminal({ agent, sessionId: externalSessionId, wor
   const wsRef = useRef<WebSocket | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const pingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const processEndedRef = useRef(false)
   const [status, setStatus] = useState<Status>('connecting')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -136,10 +130,29 @@ export default function AgentTerminal({ agent, sessionId: externalSessionId, wor
     const term = termRef.current
     if (!term) return
 
-    async function run() {
+    function clearReconnectTimer() {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+    }
+
+    function scheduleReconnect() {
+      if (cancelled || processEndedRef.current || reconnectTimerRef.current) return
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null
+        if (!cancelled && !processEndedRef.current) {
+          run(false)
+        }
+      }, 1000)
+    }
+
+    async function run(clearTerminal = true) {
+      clearReconnectTimer()
+      processEndedRef.current = false
       setStatus('connecting')
       setErrorMsg(null)
-      term!.clear()
+      if (clearTerminal) term!.clear()
 
       // 1) Use provided sessionId or find-or-create for this agent
       let sessionId: string
@@ -178,18 +191,25 @@ export default function AgentTerminal({ agent, sessionId: externalSessionId, wor
       // 2) Open WS
       const ws = new WebSocket(`${CC_WEB_WS}/ws`)
       wsRef.current = ws
+      let opened = false
+
+      const isCurrentSocket = () => !cancelled && wsRef.current === ws
 
       ws.onopen = () => {
+        if (!isCurrentSocket()) return
+        opened = true
+        setErrorMsg(null)
         ws.send(JSON.stringify({ type: 'join_session', sessionId }))
       }
 
       ws.onmessage = (ev) => {
-        if (cancelled) return
+        if (!isCurrentSocket()) return
         let msg: any
         try { msg = JSON.parse(ev.data) } catch { return }
 
         switch (msg.type) {
           case 'session_joined': {
+            setErrorMsg(null)
             // Replay any buffered output
             if (Array.isArray(msg.outputBuffer)) {
               msg.outputBuffer.forEach((chunk: string) => term!.write(chunk))
@@ -228,9 +248,11 @@ export default function AgentTerminal({ agent, sessionId: externalSessionId, wor
             break
           }
           case 'output':
+            setErrorMsg(null)
             term!.write(msg.data)
             break
           case 'claude_started':
+            setErrorMsg(null)
             setStatus('running')
             // resize after start
             {
@@ -242,6 +264,7 @@ export default function AgentTerminal({ agent, sessionId: externalSessionId, wor
             }
             break
           case 'exit':
+            processEndedRef.current = true
             setStatus('exited')
             term!.write(`\r\n\x1b[33m[Process exited${msg.code != null ? ` with code ${msg.code}` : ''}]\x1b[0m\r\n`)
             break
@@ -256,15 +279,27 @@ export default function AgentTerminal({ agent, sessionId: externalSessionId, wor
       }
 
       ws.onerror = () => {
-        if (cancelled) return
-        setStatus('error')
-        setErrorMsg('WebSocket error')
+        if (!isCurrentSocket()) return
+        if (!opened) {
+          setStatus('error')
+          setErrorMsg(`Could not open WebSocket at ${CC_WEB_WS}/ws`)
+        }
       }
 
       ws.onclose = () => {
         if (pingRef.current) {
           clearInterval(pingRef.current)
           pingRef.current = null
+        }
+        if (wsRef.current === ws) {
+          wsRef.current = null
+        } else {
+          return
+        }
+        if (!cancelled && !processEndedRef.current) {
+          setStatus('connecting')
+          setErrorMsg(opened ? 'WebSocket disconnected. Reconnecting...' : `Could not open WebSocket at ${CC_WEB_WS}/ws`)
+          scheduleReconnect()
         }
       }
 
@@ -280,6 +315,7 @@ export default function AgentTerminal({ agent, sessionId: externalSessionId, wor
 
     return () => {
       cancelled = true
+      clearReconnectTimer()
       if (pingRef.current) {
         clearInterval(pingRef.current)
         pingRef.current = null

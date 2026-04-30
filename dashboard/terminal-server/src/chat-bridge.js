@@ -48,7 +48,10 @@ const NEEDS_APPROVAL = new Set([
  * Extracts YAML frontmatter for metadata and the body as the prompt.
  */
 function loadAgentFile(agentName, cwd) {
-  const agentPath = path.join(cwd, '.claude', 'agents', `${agentName}.md`);
+  // Agent definitions live at the workspace root — cwd varies per ticket session.
+  const rootPath = path.join(WORKSPACE_ROOT, '.claude', 'agents', `${agentName}.md`);
+  const cwdPath = path.join(cwd, '.claude', 'agents', `${agentName}.md`);
+  const agentPath = fs.existsSync(rootPath) ? rootPath : cwdPath;
   if (!fs.existsSync(agentPath)) {
     console.warn(`[chat-bridge] Agent file not found: ${agentPath}`);
     return null;
@@ -98,6 +101,60 @@ async function loadSDK() {
     sdkModule = await import('@anthropic-ai/claude-agent-sdk');
   }
   return sdkModule;
+}
+
+/**
+ * Resolve the Claude Code native binary path, working around a bug in
+ * @anthropic-ai/claude-agent-sdk where Linux auto-discovery tries the
+ * `-musl` variant before glibc regardless of the host's actual libc.
+ * On glibc hosts with both packages installed, the SDK picks the musl
+ * binary, which fails to spawn because its dynamic loader is absent.
+ * See https://github.com/anthropics/claude-agent-sdk-typescript/issues/296
+ *
+ * Resolution order:
+ *   1. CLAUDE_CODE_EXECUTABLE env var (explicit override)
+ *   2. Platform-specific sibling package under node_modules, preferring the
+ *      libc variant that matches this host (glibc → no suffix; musl → -musl)
+ *   3. null → fall back to the SDK's own (buggy) discovery
+ */
+let _claudeExecutablePath = undefined;
+function resolveClaudeExecutable() {
+  if (_claudeExecutablePath !== undefined) return _claudeExecutablePath;
+
+  const envPath = process.env.CLAUDE_CODE_EXECUTABLE;
+  if (envPath && fs.existsSync(envPath)) {
+    console.log(`[chat-bridge] Using CLAUDE_CODE_EXECUTABLE=${envPath}`);
+    _claudeExecutablePath = envPath;
+    return _claudeExecutablePath;
+  }
+
+  const { platform, arch } = process;
+  const suffix = platform === 'win32' ? '.exe' : '';
+  const isMusl = platform === 'linux' && (() => {
+    try {
+      return fs.readdirSync('/lib').some((f) => f.startsWith('ld-musl-'))
+          || fs.readdirSync('/usr/lib').some((f) => f.startsWith('ld-musl-'));
+    } catch { return false; }
+  })();
+
+  const candidates = platform === 'linux'
+    ? (isMusl
+        ? [`claude-agent-sdk-linux-${arch}-musl`, `claude-agent-sdk-linux-${arch}`]
+        : [`claude-agent-sdk-linux-${arch}`, `claude-agent-sdk-linux-${arch}-musl`])
+    : [`claude-agent-sdk-${platform}-${arch}`];
+
+  for (const pkg of candidates) {
+    try {
+      const p = require.resolve(`@anthropic-ai/${pkg}/claude${suffix}`);
+      console.log(`[chat-bridge] Resolved Claude binary: ${p} (libc: ${isMusl ? 'musl' : 'glibc'})`);
+      _claudeExecutablePath = p;
+      return _claudeExecutablePath;
+    } catch { /* try next */ }
+  }
+
+  console.warn('[chat-bridge] Could not resolve Claude binary; letting SDK auto-discover');
+  _claudeExecutablePath = null;
+  return _claudeExecutablePath;
 }
 
 /**
@@ -369,6 +426,9 @@ class ChatBridge {
       abortController,
     };
 
+    const claudeExe = resolveClaudeExecutable();
+    if (claudeExe) queryOptions.pathToClaudeCodeExecutable = claudeExe;
+
     // Load agent definition from .claude/agents/{name}.md
     if (agentName) {
       const agentDef = loadAgentFile(agentName, queryOptions.cwd);
@@ -616,6 +676,10 @@ class ChatBridge {
     } catch {}
     this.sessions.delete(sessionId);
     return { sdkSessionId };
+  }
+
+  getSession(sessionId) {
+    return this.sessions.get(sessionId);
   }
 
   /**

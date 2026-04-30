@@ -5,6 +5,212 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.0] - 2026-04-25
+
+Plugin contract release. Five PRs merged in one day to unblock the EvoNexus Plugin Nutri (and any future plugin needing per-endpoint role enforcement, public token-bound portals, or safe uninstall). Plus a UX fix so `409 CONFLICT` from plugin install actually says *why* it conflicted.
+
+### Added
+
+- **`requires_role` on `PluginWritableResource`** (PR #55) — plugins can declare a list of roles allowed on each writable endpoint. The host returns `403` when `current_user.role` is not in the list. `'admin'` always passes (super-user override). Backwards compatible: resources without the field accept any authenticated user.
+- **Auto-injected readonly bind params** (PR #55) — every `readonly_data` query receives `:current_user_id` and `:current_user_role` server-side. Plugins reference them directly in SQL for scoping (`WHERE primary_nutritionist_id = :current_user_id`). Both names are reserved — clients that try to spoof them via `?current_user_id=...` get `400`.
+- **`public_pages` capability** (PR #53) — token-bound public portals at `/p/{slug}/{route_prefix}/{token}`. Token validated against a plugin-declared `token_source.column`. CSP, rate limit, and security headers applied. Read-only `readonly_data` queries can be exposed to the portal via `public_via` + `bind_token_param`.
+- **HTML shell content negotiation** (PR #56) — when a request includes `text/html` in `Accept`, the host renders a minimal HTML shell that loads the plugin bundle as a module and instantiates the declared custom element with `data-token`. Programmatic clients (`Accept: application/javascript`, default `*/*`) keep getting the raw bundle. Plugins ship a single JS bundle and get a working browser experience for free.
+- **`safe_uninstall` capability** (PR #54) — three-step uninstall wizard with `preserved_tables` (renamed to `_orphan_{slug}_*` instead of dropped), pre-uninstall hook (sandboxed: read-only DB, no `BRAIN_REPO_MASTER_KEY`), and required user confirmation (checkbox + typed phrase + ZIP password). Reinstall verifies SHA256 and restores access to preserved data.
+- **Rate limit + security headers** (PR #52) — `flask-limiter` with in-memory storage on the public share endpoint and any future `/p/...` route. Five security headers applied to public responses (`Referrer-Policy`, `Cache-Control: no-store`, HSTS, `X-Content-Type-Options`, `Pragma`).
+
+### Fixed
+
+- **Plugin install wizard now shows the actual reason for `409 CONFLICT`.** The frontend was treating any 4xx as an opaque error string. Now `buildError` in `lib/api.ts` falls back to `data.conflicts[0]` when the standard `error`/`message` fields are absent (which is the case for the plugin preview endpoint), so a version mismatch shows up as `"409 CONFLICT: Plugin 'nutri' requires EvoNexus >= 0.33.0, but installed version is 0.32.3."` instead of just `"409 CONFLICT"`. `PluginInstallModal` also fixes the type of `conflicts` (was `Record<string, unknown>`, the backend always returned `string[]`) and renders each conflict as a list item.
+
+### Compat
+
+- All existing plugins (PM Essentials, etc.) work unchanged. New manifest fields default to absent / `None` and the auto-injected bind params are silently ignored if the SQL doesn't reference them. The `409` body shape for plugin install was already `{conflicts: [...], manifest, ...}` — only the frontend's interpretation changed.
+
+## [0.32.3] - 2026-04-25
+
+Patch release fixing a long-standing Workspace UI bug where folders refused to open and the dev console flooded with `400 Path is a directory` requests, plus a small UX win on the file share dialog (reuse existing share links instead of generating a new token every time). Also includes the upstream PR #51 (private-repo plugin update flow + ClickUp webhook compat + DetachedInstanceError).
+
+### Fixed
+
+- **`dashboard/frontend/src/App.tsx`** — section-stable `routeKey` for the `SectionBoundary`. Previously every `navigate({replace:true})` inside `/workspace/*`, `/agents/:name`, `/tickets/:id`, `/skills/:name` and `/docs` produced a new `location.key`, which changed the boundary's React `key` and remounted the entire page. In the Workspace this wiped `selectedPath`, `expanded` state in `TreeItem`, and refs on every folder click — folders never stayed open and the URL→state effect re-fired the file probe (`GET /api/workspace/file?path=workspace/development` → 400) on every mount. Now subpaths within the same section share one stable key; the boundary still resets between sections.
+- **`dashboard/frontend/src/components/workspace/FileTree.tsx`** — split the toggle in `TreeItem.handleClick` into explicit open / close branches. The previous `setExpanded(prev => !prev)` toggle was vulnerable to any re-trigger flipping a freshly-opened folder back closed.
+- **`dashboard/frontend/src/pages/Workspace.tsx`** — added `knownDirsRef` so the URL→`selectedPath` deep-link effect can skip the redundant `GET /api/workspace/file?path=…` probe when the path is already known to be a directory (e.g. user just clicked it). The probe used to 400 on every directory navigation, polluting server logs and racing with `setSelectedPath` re-renders.
+
+### Changed
+
+- **`dashboard/backend/routes/shares.py`** — new `GET /api/shares/by-path?path=X` endpoint returning the most recent **active** (enabled + non-expired) share for a path, or 404. Same permission gate (`workspace.manage`) and folder-access check as `POST /api/shares`.
+- **`dashboard/frontend/src/components/workspace/ShareDialog.tsx`** — on open, probe `by-path` and reuse any existing active share instead of always minting a new token. The dialog now shows the existing link with formatted expiry, view counter, and a destructive **Revoke and regenerate** action when you actually want to rotate the link. New share creation only happens when there isn't one already.
+
+### Included from PR #51
+
+- **Plugins + triggers** — private-repo update flow, ClickUp webhook compatibility, and a `DetachedInstanceError` fix landed via PR #51 ahead of this patch.
+
+## [0.32.2] - 2026-04-24
+
+Patch release working around a bug in `@anthropic-ai/claude-agent-sdk` (v0.2.104+) where Linux auto-discovery tries the `-musl` platform package before glibc regardless of the host's actual libc. On glibc VPS installs (Ubuntu / Debian) with both platform packages present in `node_modules`, the SDK spawned the musl binary and failed with `Claude Code native binary not found` because the musl dynamic loader was absent — breaking every chat session on the affected VPS with no local repro. See upstream [issue #296](https://github.com/anthropics/claude-agent-sdk-typescript/issues/296).
+
+### Fixed
+
+- **`dashboard/terminal-server/src/chat-bridge.js`** — add `resolveClaudeExecutable()` that probes `/lib` and `/usr/lib` for `ld-musl-*` to detect the host's libc, then reorders the candidate platform packages to prefer the matching variant (glibc-first on glibc hosts, musl-first on Alpine/musl). Resolved path is passed via `queryOptions.pathToClaudeCodeExecutable` so the SDK skips its own (buggy) discovery. Respects `CLAUDE_CODE_EXECUTABLE` env override and falls back to SDK auto-discovery if no candidate resolves (preserves macOS dev flow).
+
+### Changed
+
+- **`dashboard/terminal-server/package.json`** — pin `@anthropic-ai/claude-agent-sdk` to exact `0.2.119` (was `^0.2.104`) so fresh `npm install` on the VPS doesn't drift into a newer minor with the same or worse regression before upstream lands a libc-aware fix.
+
+## [0.32.1] - 2026-04-24
+
+Patch release fixing a `tsc -b` strict-mode type error in `PluginDetail.tsx` that broke fresh frontend builds (`npm run build` fails with TS2322 on `manifest['description']`). Local incremental builds passed because `.tsbuildinfo` cached the file as clean; fresh installs hit the error on first compile.
+
+### Fixed
+
+- **`PluginDetail.tsx`** — narrow `manifest['description']` with `typeof === 'string'` before using it as a truthy check and JSX child. Previously `Record<string, unknown>` lookup was cast only in the `<dd>` body, not in the conditional, so `tsc -b` rejected the truthy check as `unknown` in JSX.
+
+## [0.32.0] - 2026-04-24
+
+Minor release introducing the **Plugin System v1** — a full extensibility layer with 15 capabilities, pre-install security scanning, per-capability toggles, update diff previews, and a reference plugin (`pm-essentials`). Ships alongside a security-hardening pass (PRD #37) and a batch of community-reported fixes.
+
+### Added
+
+- **Plugin System v1 — 15 capabilities, security gate, reference plugin (#41)** — end-to-end extensibility: Pydantic-validated manifests, git/zip/local install with SHA-256 integrity check, semver-aware migration runner with rollback, atomic file ops, Claude Code hooks dispatcher (PreToolUse / PostToolUse / Stop / SubagentStop) with per-plugin SQLite circuit breaker, and crash recovery for orphaned installs. Capabilities include agents, skills, commands, rules, routines, heartbeats, widgets, readonly_data, writable_data, claude_hooks, goals, tasks, triggers, MCP servers and custom UI pages. Plugin-contributed rows are tagged with `source_plugin` across `tickets`, `projects`, `goals`, `missions`, `goal_tasks` and `triggers` so uninstall cleans them without touching user data.
+- **Plugins REST API + dashboard UI** — full CRUD (`GET/POST/PATCH/DELETE /api/plugins`), curated marketplace listing, upload endpoint (ZIP / tar.gz, 20 MB cap, zip-slip guard), preview-before-install flow, audit log, and per-plugin widget limits per tier (essential / standard / power). New `/plugins` page with marketplace grid, install wizard (source → security scan → config → confirm), plugin detail with widgets, capabilities toggles, MCP banner, and Update button with diff preview (Wave 1.2). New `/mcp-servers` system page aggregating `~/.claude.json` entries grouped by plugin / native with masked env values.
+- **Plugins CLI (`cli/src/commands/plugin.mjs`)** — `plugin init` (scaffold from template), `plugin install <source>`, `plugin list`, `plugin uninstall <slug>`, `plugin update <slug>`. Starter template under `cli/templates/plugin-skeleton/` ships with a pre-filled `plugin.yaml`, sample agent, and README.
+- **Plugin security scan (Wave 2.5)** — hybrid regex + LLM scanner with 13 pattern categories, 57-domain whitelist, anti-hallucination guard, 7-day cache in `plugin_scan_cache`, and an APPROVE / WARN / BLOCK adaptive button with admin BLOCK override. New `plugin-security-scan` skill exposes the semantic scanner.
+- **Plugin MCP servers (Wave 2.3)** — plugins can declare MCP servers with command whitelist and shell-metachar block; 6-layer atomic write to `~/.claude.json` with flock, timestamped backups (retention 10) and drift detection (name + args_hash match). UI shows a restart-Claude-CLI callout on install and an MCP diff section in update preview.
+- **Plugin integrations (Wave 2.2r)** — plugins can declare env-var-based integrations with optional HTTP health checks running as in-process heartbeats (zero Claude CLI overhead). New Plugin Integrations section on `/integrations` with schema-driven configure modal and secret masking.
+- **Plugin custom UI (Wave 2.1)** — plugins can contribute React pages mounted at `/plugins-ui/:slug/*`, sidebar groups, and writable SQLite resources with column allowlist + jsonschema validation. `window.EvoNexus` SDK injected post-login for plugin frontends.
+- **Plugin per-capability toggles (Wave 1.1)** — granular ON/OFF per capability without uninstalling the plugin. Disable cascades to `.claude/{agents,skills,commands}/plugin-{slug}-*` (rename to `.disabled`), routines skipped by the scheduler, hooks and heartbeats skipped by their dispatchers.
+- **Plugin management skills** — `plugin-install`, `plugin-list`, `plugin-uninstall`, `plugin-update`, `plugin-marketplace`, `plugin-health` expose plugin operations to all agents.
+- **`agent_meta_seed.py`** — 38-agent seed served via `GET /api/agent-meta` (in-process cache + invalidation). Plugin agents contribute metadata via `manifest.metadata.icon` + per-agent avatars; frontend registry (`agent-meta.ts`) is hydrated once post-login and plugin cards render custom icons with img fallback.
+- **Merged routines listing** — `/api/routines` now merges declared routines (via `discover_routines()`) with execution metrics so newly installed plugin routines and unrun core routines show up in `/routines` with zeroed metrics.
+- **`EVONEXUS_DEV=1`** — toggles Flask's auto-reloader (`debug=True`, `use_reloader=True`) for backend development. Default remains off; production uses systemd/docker.
+- **`docker-compose.proxy.yml` (#45)** — sibling compose file for reverse-proxy hosts (Coolify, Dokploy, Traefik, Caddy): uses `expose:` instead of `ports:` so the proxy owns external traffic while containers stay reachable by name inside the Docker network. Volumes named identically to `hub.yml` for no-loss migration.
+- **`docs/knowledge-database.md` (#46)** — provider cheat-sheet for Supabase / Neon / Railway PgBouncer gotchas (port 5432 vs 6543, Supabase IPv6-only edge case, error reference table). Inline hint added under the Knowledge connections wizard input.
+- **`scripts/clean-history.sh` (#26)** — safe-by-default dry-run helper that clones the remote as `--mirror` and previews removal of ~283 MB of orphaned PNG avatar blobs via `git filter-repo --path-regex`. Verifies develop/main HEAD trees are byte-identical and all tags preserved before the maintainer force-pushes. `CONTRIBUTING.md` gains the partial-clone recipe (`git clone --filter=blob:none`) so contributors download ~10 MB instead of ~290 MB in the interim.
+
+### Changed
+
+- **`/api/health/deep` now requires an authenticated admin session** (PRD security hardening, #37) — previously leaked filesystem paths, provider identity, secret-key source, and error details to unauthenticated callers. `/api/health` is now a minimal public liveness probe returning status only. Tooling scraping `/api/health/deep` for internals must authenticate.
+- **Frontend route splitting (#37)** — top-level route bundles are code-split so the main chunk size drops substantially on first load.
+- **Plugin install sources restricted (hardening)** — `resolve_source` now rejects local filesystem paths, `file://`, `ssh://` and non-HTTPS schemes with a clear `ValueError`. Only `github:`, `https://` tarballs, or uploaded ZIP / tar.gz archives are accepted. Closes the doc/code mismatch where the skill promised rejection but the code accepted anything via `Path(s)`.
+- **Plugin triggers ship disabled by default** — regardless of YAML value, unless explicitly `"true"`, so a malicious plugin cannot auto-fire hooks on install.
+- **Telegram notifications moved from skills to routines** — `run_skill(notify_telegram=True)` appends a one-shot send instruction at the end of the prompt, guaranteeing exactly one send per execution (was duplicated when skills embedded the instruction themselves). Skills cleaned: `prod-end-of-day`, `prod-good-morning`, `pulse-faq-sync`, `pulse-daily`.
+- **Integration status verifies all declared env keys (#49)** — `list_integrations` previously checked only a single key per entry, so Evolution API / Evolution Go / Evo CRM showed as "configured" with only the token set (URL missing) or vice-versa. Schema is now `keys: list[str]`; an integration is considered configured only when every declared key is non-empty.
+- **Bling integration keys corrected (#49)** — `BLING_ACCESS_TOKEN` (which existed nowhere in the repo) replaced with `BLING_CLIENT_ID` / `BLING_CLIENT_SECRET` used by the real OAuth2 flow. **Migration:** users who set `BLING_ACCESS_TOKEN` manually must run `make bling-auth` to obtain the OAuth credentials.
+- **Omie integration now requires both `OMIE_APP_KEY` and `OMIE_APP_SECRET`** — backend was only checking the key, so a half-configured Omie appeared green (#49).
+
+### Fixed
+
+- **`scripts/start-services.sh` no longer kills unrelated processes (#18)** — `pkill -f 'python.*app.py'` matched every `app.py` on the host, killing unrelated services. Replaced with an explicit pinned match on the venv interpreter + absolute script path, and TCP 8080 (or `EVONEXUS_PORT`) is now freed directly via `fuser` / `lsof` before restart — falls back to `lsof -ti tcp:$PORT | kill` when `fuser` is absent (BSD-ish / macOS).
+- **Terminal client detects RFC1918 + CGNAT hostnames as local (#35)** — previously only `localhost` / `127.0.0.1` were treated as local, so bare-metal installs behind no reverse proxy fell back to `/terminal` on the same origin, which didn't exist. Heuristic widened to RFC1918 (`10/8`, `172.16/12`, `192.168/16`), RFC6598 CGNAT (`100.64.0.0/10`, common on Brazilian VPS), link-local (`169.254/16`), IPv6 loopback (`::1`), and IPv6 link-local (`fe80:`). New `VITE_TERMINAL_URL` explicit override for edge cases (reverse proxy on a private IP). `deriveWsBase` rewritten to use `URL()` instead of a regex that silently dropped the `https` branch and mangled uppercase schemes.
+- **Plugin uninstall sweeps leftover `plugin-{slug}-*` files** — `reverse_remove_from_manifest` walks `.install-manifest.json`, but if that manifest is missing / corrupt / predates the name-rewrite change, files in `.claude/{agents,skills,rules,commands}/` stayed behind and the next install hit 409. An unconditional sweep runs after the manifest pass.
+- **Plugin install seeds an anchor mission per plugin** — plugins seeding projects without `mission_id` left them orphaned and invisible in `/goals`. Installer now synthesizes one mission per plugin (`plugin-{slug}-root`) when the YAML doesn't declare one and links all orphan projects to it. Missions get `source_plugin` too so uninstall cleans them.
+- **Plugin widget listing reads `ui_entry_points.widgets`** — was reading a non-existent `manifest.manifest.widgets` key and returning `[]` regardless of mount point.
+- **Plugin install falls back to first `migrations/*.sql`** when `migrations/install.sql` is missing, so plugin authors using the `NNN_description.sql` convention don't have to rename.
+- **Plugin skills install as directory trees** — `copy_with_manifest` now copies `skills/<name>/` as a whole directory and rewrites the `name:` field inside `SKILL.md` to match the prefixed dirname, enforcing the Claude Code contract that `name` == filename. Agents / commands / rules similarly get their `name:` frontmatter rewritten.
+- **Plugin `GET /api/plugins/<slug>/audit` endpoint** — was missing, so `PluginDetail.tsx` hit the SPA catch-all, got `index.html` back, and threw `Unexpected token '<'` on JSON parse.
+- **Plugin heartbeat agent references get auto-prefixed** — plugins can declare `assignee_agent: pm-nova` instead of the full `plugin-pm-essentials-pm-nova`; the installer rewrites bare references to match the prefixed file.
+- **Plugin update endpoint now uses `resolve_source`** — works from `github:` / `https://` / uploaded path (was local-only).
+- **`PATCH /api/triggers/<id>`** — the endpoint was simply missing.
+- **Brain Repo sync no longer blocks HTTP requests** — new `brain_repo/job_runner.py` background executor serialises sync / milestone / bootstrap ops. `POST /sync/force`, `/sync/cancel`, `/tag/milestone` now enqueue jobs and return immediately; `GET /status` exposes job state. `/backups` and `/brain-repo` pages poll state and expose a Cancel button (cooperative `cancel_requested` flag checked between git steps).
+- **`ticket_janitor.py`** — guards against `IsADirectoryError` on the health-check path that crashed on certain setups.
+
+### Security
+
+- **Pre-install plugin security scanning** — every plugin installed from an external source runs through a hybrid regex + LLM scanner before any file lands on disk. APPROVE / WARN / BLOCK with admin override + audit trail.
+- **`/api/health/deep` requires admin** — see Changed.
+- **Plugin install sources restricted to HTTPS / github / upload** — see Changed.
+- **Plugin triggers disabled by default** — see Changed.
+
+## [0.31.0] - 2026-04-24
+
+Minor release introducing the **Brain Repo** — automatic GitHub versioning of workspace memory and customizations — plus a full onboarding wizard and a unified `/backups` page covering Local, S3 and Brain Repo destinations.
+
+### Added
+
+- **Brain Repo — GitHub versioning of `memory/`, `workspace/`, `customizations/` and `config-safe/`** — a dedicated private repo (`evo-brain-<username>`) is created or detected per user. A file watcher with 30s debounce persists every change to GitHub; daily, weekly and milestone snapshots can be restored via a streaming SSE engine. GitHub tokens are Fernet-encrypted at rest with `BRAIN_REPO_MASTER_KEY` (auto-generated at first boot); `connect`/`sync` endpoints return `500 CRYPTO_UNAVAILABLE` when encryption is unavailable — plaintext fallback was explicitly removed. A 21-pattern secrets scanner runs before every push (AWS / GitHub / Anthropic / OpenAI / Stripe / JWT / SSH, etc.) — matched files are deleted and never leave the machine.
+- **Onboarding wizard** — post-account-creation flow replacing the cold-drop into Overview. First-time users pick an AI provider (Anthropic / OpenAI / OpenRouter / Codex OAuth) with per-provider sub-flows and optionally connect a brain repo; returning users can restore from any snapshot via a type-to-confirm safety gate. Includes an `OracleWelcomeBanner` on `/agents` (one-time, dismissable).
+- **Unified `/backups` page** — single surface for Local ZIPs, S3 and Brain Repo with 3 destination cards, tabs (counts per source), import dropdown (upload `.zip` + pull from Brain Repo), contextual restore modal with SSE progress and a danger state when crypto is broken. 30s visibility-aware polling keeps watcher results fresh.
+- **Brain Repo settings page** — `/settings/brain-repo` with status card (connected / pending / last_error / crypto danger), Sync-now, Create-milestone and Disconnect actions, fully i18n'd.
+- **i18n** — ~270 new keys across `onboarding.*`, `restore.*`, `brainRepoSettings.*`, `backups.*`, `agents.welcomeBanner.*` (en-US / pt-BR / es), with identical key trees and natural translations.
+- **CLI** — `setup.py` now prompts for brain-repo during initial setup and collects the PAT; `backup.py --target github` pushes a manual sync through the dashboard's own code path.
+- **Dev environment** — `docker-compose.dev.yml` with live-reload backend + named volumes, `Dockerfile.dev` with `--legacy-peer-deps` and globally-installed `@anthropic-ai/claude-code` + `@gitlawb/openclaude`, CRLF-safe entrypoint scripts, and a step-by-step `DEV-SETUP.md`.
+
+### Changed
+
+- **`/api/backups/config`** extended with `brain_repo_configured`, `brain_repo` and `brain_crypto_ready` so the tabs UI renders in one round-trip.
+- **`lib/api.ts`** — `buildError()` now extracts the JSON `error` / `description` / `message` from non-OK responses while preserving the status-code prefix, so existing `.includes('401')` callers keep working.
+- **`useGlobalNotifications`** — HTTP health-probe before WS + visibility guard, eliminating the `WebSocket connection failed` console spam on pages that don't use the terminal.
+- **`App.tsx`** — onboarding guard treats `null` state as "needs onboarding" and redirects accordingly.
+
+### Fixed
+
+- **Restore SSE crash on `execute_restore(install_dir=...)`** — call-site kwargs now match the function signature `(repo_url, ref, token, install_dir, include_kb, kb_key_matches)` 1:1; `install_dir` resolves to the workspace root (where the SWAP_DIRS are replaced), not the brain-repo clone. A new import-time signature check in `brain_repo/__init__.py` emits a CRITICAL log on drift so future regressions are visible at startup.
+- **Watcher no-op on workspace changes** — `sync_force`, `tag_milestone` and the watcher now mirror `memory/workspace/customizations/config-safe` from workspace → brain-repo clone *before* `git add`, so `commit_all` actually sees the new files.
+- **`start_brain_watcher` circular import** — now accepts the Flask app explicitly instead of importing it, eliminating the startup "current Flask app is not registered with this 'SQLAlchemy' instance" warning that silently disabled auto-sync.
+
+## [0.30.4] - 2026-04-24
+
+Patch release with a **P0 race-condition fix** in the container entrypoint plus a complete Docker install experience (ready-to-run compose + full tutorial).
+
+### Fixed
+
+- **Race condition on shared `/workspace/config` volume (P0)** — when `dashboard`, `telegram` and `scheduler` boot in parallel against the same named volume (the canonical Docker / Swarm / Portainer deploy pattern), the first-boot bootstrap raced on four operations:
+  - `[ ! -f .env ] && cp .env.example .env` — one container wins, others crash with `File exists`. Scheduler died visibly on every fresh v0.30.3 deploy.
+  - `[ ! -f ] && cp` for `providers.json` / `heartbeats.yaml` — same race.
+  - `grep -q EVONEXUS_SECRET_KEY || echo … >> .env` — two processes both see "not found" and append **two different keys**; Flask picks one at random per request, invalidating sessions silently.
+  - Same pattern for `KNOWLEDGE_MASTER_KEY` — silently corrupted Knowledge Base encryption, losing all configured DB connections on second boot.
+
+  Fix: wrap the whole bootstrap in `flock` on a lockfile inside the shared volume, serializing all containers regardless of start order. Also added `cp -n` (no-clobber) as belt-and-suspenders. `flock` is part of `util-linux`, already present in both base images.
+
+### Added
+
+- **`docker-compose.hub.yml`** — ready-to-run compose file that pulls `evoapicloud/evo-nexus-*` from Docker Hub instead of building from source. Uses `depends_on: condition: service_healthy` to order the boot (dashboard first, then telegram/scheduler) — defense-in-depth on top of the flock fix. This is the recommended install for end users: `curl -O …docker-compose.hub.yml && docker compose -f docker-compose.hub.yml up -d`.
+- **`docs/guides/docker-install.md`** — complete Docker install guide. Prerequisites (Docker Engine 24+ is the only requirement — image ships everything), one-command boot, first-boot wizard walkthrough, update flow (`docker compose pull && up -d`), backup/restore recipes, advanced section documenting how to pass secrets via `environment:` or Docker Secrets (for CI/CD and immutable-infra users who prefer to keep secrets out of the `.env` volume), running behind Caddy for public HTTPS, troubleshooting table.
+- **Install method chooser in `docs/getting-started.md`** — table at the top comparing Docker vs CLI (`npx`) vs manual clone, with clear guidance on which to pick.
+
+### Changed
+
+- **`README.md`** — Docker promoted to Method 1 in Quick Start. Prerequisites split into two tracks (Docker-only vs CLI-flow), reflecting that the Docker image ships Claude Code, Python, Node, uv and `gh` baked in.
+- **`docs/guides/updating.md`** — new `docker compose -f docker-compose.hub.yml pull && up -d` section documenting the Docker Hub upgrade path. Swarm examples bumped to `v0.30.4`.
+
+## [0.30.3] - 2026-04-24
+
+Patch release completing the Docker Hub migration: official images now ship as **multi-arch manifests** (`linux/amd64` + `linux/arm64`) so ARM hosts (Apple Silicon, AWS Graviton, Oracle Cloud ARM, Raspberry Pi, many modern VPS) can pull without platform overrides.
+
+### Added
+
+- **Multi-arch Docker images** — `.github/workflows/docker-publish.yml` now runs `docker/setup-qemu-action@v3` and passes `platforms: linux/amd64,linux/arm64` to `build-push-action`. Every published tag (`latest`, `vX.Y.Z`, `X.Y`, `X.Y.Z`, `main`, `sha-*`) ships a manifest list covering both architectures. The `node-pty` native addon compiles from source via node-gyp inside the arm64 builder, so there's no prebuilt-binary-per-arch concern.
+
+### Removed
+
+- **`evonexus.portainer.stack.yml`** — deleted the personal Portainer template from the repo root. It was a pre-configured stack for a specific host (`advancedbot.com.br`, `network_public` network) pointing at a fork's Docker Hub namespace (`marcelolealhub/*`), which could mislead new users into pulling from the wrong registry. The canonical template remains at [`evonexus.stack.yml`](https://github.com/EvolutionAPI/evo-nexus/blob/main/evonexus.stack.yml), which already supports Portainer/Traefik deployments and points at the official `evoapicloud/evo-nexus-*` images.
+
+## [0.30.2] - 2026-04-23
+
+Patch release focused on CI/distribution: Docker images now ship from the official `evoapicloud` namespace on Docker Hub (public, no auth required on Swarm managers), and the legacy dashboard-only workflow was removed to unblock the build pipeline.
+
+### Changed
+
+- **Docker images published to Docker Hub under `evoapicloud/`** — the Swarm workflow (`.github/workflows/docker-publish.yml`) now pushes `evo-nexus-runtime` and `evo-nexus-dashboard` to `docker.io/evoapicloud/*` instead of `ghcr.io`. Requires `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` secrets on the repo. The `evonexus.stack.yml` template and `README.swarm.md` were updated to reference the public images — no `OWNER` placeholder to fill in, no `docker login` needed on Swarm managers.
+
+### Removed
+
+- **Redundant `dashboard.yml` workflow** — deleted `.github/workflows/dashboard.yml`, which built a Python+React-only dashboard image (`Dockerfile.dashboard`) that nothing consumes. The Swarm workflow already produces a strict superset (with terminal-server and both CLIs). This also fixes the build failure on `main` caused by a TypeScript peer-dep conflict in the legacy Dockerfile.
+
+## [0.30.1] - 2026-04-23
+
+Patch release focused on thread UX polish: session now swaps cleanly when switching threads via the sidebar, the agent is briefed explicitly about running inside a persistent thread (not a fresh one-shot session), the assignee dropdown stops hiding agents, and fresh installs no longer inherit Evolution-specific goal seed data.
+
+### Fixed
+
+- **Thread switch leaked previous conversation** — switching threads via the sidebar kept `threadSessionId` pinned to the old ticket and `<AgentChat>` kept rendering the old messages until a full page reload (or going back to `/topics` and entering again). Two fixes in `TicketDetail.tsx`: (1) a new effect resets `threadSessionId` whenever `ticket?.id` changes so the auto-init re-runs for the new ticket; (2) `<AgentChat key={ticket.id}>` forces a full remount so the WebSocket, message buffer and internal effects restart cleanly.
+- **Topics assignee dropdown hid 18 of 38 agents** — the Assign-to-agent combobox in `/topics` sliced the filtered list at 20 items (`filteredAgents.slice(0, 20)`), silently dropping agents whose slugs come later alphabetically (from `m` onward). Removed the slice and bumped `max-h-48` to `max-h-72` so ~12 agents are visible at once without scrolling and all 38 are reachable.
+- **Goals: Evolution-specific seed leaking into open-source installs** — `dashboard/backend/app.py` was seeding a hardcoded "Evolution Revenue $1M Q4 2026" mission with 3 projects (evo-ai, evo-summit, evo-academy) and 5 goals on first boot. Removed the seed block so new instances start empty. The `/goals` empty state now points users at the `/create-goal` skill instead of the misleading "Run the backend migration to seed initial data" message. Existing installations with the seed applied can clean it with `DELETE FROM goal_tasks; DELETE FROM goals; DELETE FROM projects; DELETE FROM missions;`.
+
+### Changed
+
+- **Thread context now always injected into the agent's system prompt** — when a thread session initialises, `TicketDetail.initThreadSession` always builds a "Thread Context" block explaining that the agent is running inside a persistent thread (not a fresh session): the thread title, description, assigned agent slug, default workspace folder, memory file path, summarization cadence, and resume behaviour. It also tells the agent **not** to re-invoke itself via the `Agent` tool (which was causing confusing `@zara-cs` calling `@zara-cs` patterns). Memory.md content is appended when present, so empty threads still get the full context and populated threads still surface prior-session knowledge. Respects the existing `!sdkSessionId` guard in `chat-bridge.js` — only injected on fresh sessions, not on `--resume`.
+
 ## [0.30.0] - 2026-04-23
 
 Minor release adding a unified Activity Log — a single page aggregating execution history across routines, heartbeats and triggers so the user can answer "what did the system just do?" without visiting three separate pages.
@@ -18,6 +224,10 @@ Minor release adding a unified Activity Log — a single page aggregating execut
   - **Accessibility:** drawer is `role="dialog"` `aria-modal="true"`, Escape closes, click-outside closes.
   - **Nav:** new sidebar item "Activity" (`Atividade` pt-BR / `Actividad` es) under the operations group. `View all →` on the Overview Routines card now points to `/activity` for a unified journey.
   - **Data sources:** reuses existing backend endpoints — `GET /api/routines/logs`, `GET /api/heartbeats/{id}/runs`, `GET /api/triggers/{id}`. Client-side aggregation (N+1 fetches via `Promise.all`) — acceptable for v1 volume; server-side aggregated endpoint can come later if needed.
+
+### Fixed (same release)
+
+- **Activity parser — real routine log shape** — initial parser was looking for `log.name` / `log.routine_name` / `log.status` / `log.exit_code`, which don't exist in `ADWs/logs/YYYY-MM-DD.jsonl`. Real shape is `{ timestamp, run, prompt, returncode, duration_seconds, input_tokens, output_tokens, cost_usd }`. Parser now reads `run` as the routine name (so rows show `good-morning`, `end-of-day`, etc. instead of `Unknown Routine`), derives status from `returncode`, and surfaces `cost_usd` / token counts / prompt preview in the drawer.
 
 ### Known limitations (v1)
 

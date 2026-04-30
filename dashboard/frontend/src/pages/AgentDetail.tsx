@@ -11,6 +11,7 @@ import { trackAgentVisit } from './Agents'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { useAuth } from '../context/AuthContext'
 import { useNotificationBadge } from '../hooks/useNotificationBadge'
+import { TS_HTTP } from '../lib/terminal-url'
 
 interface MemoryFile {
   name: string
@@ -19,12 +20,6 @@ interface MemoryFile {
 }
 
 type Tab = 'sessions' | 'profile' | 'memory'
-
-// Terminal-server URL (same logic as AgentTerminal)
-const isLocal = import.meta.env.DEV || /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
-const TS_HTTP = isLocal
-  ? `http://${window.location.hostname}:32352`
-  : `${window.location.origin}/terminal`
 
 interface TerminalTab {
   id: string       // sessionId

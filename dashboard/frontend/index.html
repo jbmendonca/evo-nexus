@@ -7,6 +7,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!--
+      Wave 2.1 CSP hardening (connect-src):
+      - 'self' covers all /api/*, /plugins/*, and same-origin terminal proxy calls
+      - ws:/wss: are required for browser WebSocket implementations that do
+        not treat ws(s)://same-host as 'self' for connect-src
+      - Google Fonts are loaded via <link rel="stylesheet"> (style-src / font-src, not connect-src)
+    -->
+    <meta http-equiv="Content-Security-Policy"
+      content="connect-src 'self' ws: wss:" />
     <title>Evo Workspace</title>
   </head>
   <body class="bg-[#0C111D] text-[#F9FAFB]">

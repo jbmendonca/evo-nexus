@@ -5,10 +5,11 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request, Response
+from flask import Blueprint, jsonify, request, Response, after_this_request
 from flask_login import login_required, current_user
 
 from models import db, FileShare, audit, has_workspace_folder_access
+from rate_limit import limiter
 from routes.auth_routes import require_permission
 
 bp = Blueprint("shares", __name__)
@@ -130,6 +131,41 @@ def list_shares():
     return jsonify({"shares": [s.to_dict() for s in shares]})
 
 
+@bp.route("/api/shares/by-path", methods=["GET"])
+@login_required
+@require_permission("workspace", "manage")
+def get_active_share_by_path():
+    """Return the most recent ACTIVE (enabled + not expired) share for a path,
+    so the UI can reuse it instead of generating a new token every time."""
+    path = (request.args.get("path") or "").strip()
+    if not path:
+        return jsonify({"error": "path is required", "code": "bad_path"}), 400
+
+    if not has_workspace_folder_access(current_user.role, path):
+        return jsonify({"error": "Access to this workspace folder is restricted", "code": "forbidden"}), 403
+
+    now = datetime.now(timezone.utc)
+    candidates = (
+        FileShare.query
+        .filter_by(path=path, enabled=True)
+        .order_by(FileShare.created_at.desc())
+        .all()
+    )
+    for share in candidates:
+        if share.expires_at is not None:
+            expires = share.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if now > expires:
+                continue
+        base_url = request.host_url.rstrip("/")
+        return jsonify({
+            **share.to_dict(),
+            "url": f"{base_url}/share/{share.token}",
+        })
+    return jsonify({"error": "No active share for this path", "code": "not_found"}), 404
+
+
 @bp.route("/api/shares/<token>", methods=["DELETE"])
 @login_required
 @require_permission("workspace", "manage")
@@ -149,6 +185,7 @@ def revoke_share(token: str):
 # ── Public endpoint (no auth required) ──────────────────────────────────────
 
 @bp.route("/api/shares/<token>/view", methods=["GET"])
+@limiter.limit("60 per minute")
 def view_share(token: str):
     """Serve the file content for a valid share token. No authentication required."""
     share = FileShare.query.filter_by(token=token).first()
@@ -178,6 +215,16 @@ def view_share(token: str):
     ip = request.remote_addr or "-"
     ua = (request.headers.get("User-Agent", "-") or "-")[:200]
     audit(None, "share_view", "shares", detail=f"token={token} ip={ip} ua={ua[:80]}")
+
+    # Vault §2.S2: security headers on all public share responses.
+    @after_this_request
+    def _add_security_headers(response):
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cache-Control"] = "no-store, private, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        return response
 
     suffix = full.suffix.lower()
 

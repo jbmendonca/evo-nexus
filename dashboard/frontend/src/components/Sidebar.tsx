@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Bot, Clock, Zap, Layout, Calendar, CalendarClock,
   Brain, Plug, DollarSign, FolderOpen, Cpu,
   Monitor, Users, ScrollText, LogOut, Menu, X, Shield, BookOpen, Library, Database,
-  ArrowUpCircle, ChevronDown, Webhook, HardDriveDownload, Settings, Share2, Heart, Target, Ticket,
+  ArrowUpCircle, ChevronDown, Webhook, HardDriveDownload, Settings, Share2, Heart, Target, Ticket, Archive
 } from 'lucide-react'
 
 interface VersionInfo {
@@ -54,6 +54,7 @@ const navGroups: NavGroup[] = [
       { to: '/goals', labelKey: 'goals', icon: Target, resource: 'goals' },
       { to: '/issues', labelKey: 'issues', icon: Ticket, resource: 'tickets' },
       { to: '/templates', labelKey: 'templates', icon: Layout, resource: 'templates' },
+      { to: '/nfe-separator', labelKey: 'nfeSeparator', icon: Archive, resource: null },
     ],
   },
   {

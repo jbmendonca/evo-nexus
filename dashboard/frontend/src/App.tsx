@@ -44,6 +44,7 @@ import KnowledgeUpload from './pages/Knowledge/Upload'
 import KnowledgeBrowse from './pages/Knowledge/Browse'
 import KnowledgeSearch from './pages/Knowledge/Search'
 import KnowledgeApiKeys from './pages/Knowledge/ApiKeys'
+import NfeSeparator from './pages/NfeSeparator'
 
 function AppContent() {
   const location = useLocation()
@@ -116,6 +117,7 @@ function AppContent() {
           <Route path="/integrations" element={<Integrations />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/scheduler" element={<Scheduler />} />
+          <Route path="/nfe-separator" element={<NfeSeparator />} />
           {hasPermission('heartbeats', 'view') && <Route path="/heartbeats" element={<HeartbeatsList />} />}
           {hasPermission('heartbeats', 'view') && <Route path="/heartbeats/:id" element={<HeartbeatDetail />} />}
           <Route path="/memory" element={<Memory />} />

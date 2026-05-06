@@ -50,8 +50,8 @@ function shouldStartSmartRouter() {
   }
 }
 
-/**
- * Read the OpenRouter API key from the environment or providers.json.
+/** 
+ * Read the OpenRouter API key from the environment or providers.json. 
  */
 function getOpenRouterApiKey() {
   // 1. Environment variable (preferred)
@@ -72,7 +72,7 @@ function getOpenRouterApiKey() {
     const gemOR = config.providers?.['gemini-openrouter'];
     const gemKey = gemOR?.env_vars?.OPENAI_API_KEY;
     if (gemKey && gemKey.startsWith('sk-or-')) return gemKey;
-  } catch {}
+  } catch { }
 
   return '';
 }

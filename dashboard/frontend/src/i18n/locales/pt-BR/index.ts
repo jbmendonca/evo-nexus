@@ -200,6 +200,7 @@ const translations = {
       logout: 'Sair',
       profile: 'Perfil',
       updateAvailable: 'Atualização disponível: v{{version}}',
+      nfeSeparator: 'Separador Fiscal',
     },
 
     login: {

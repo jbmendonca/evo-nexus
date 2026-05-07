@@ -589,6 +589,7 @@ from routes.knowledge_proxy import bp as knowledge_proxy_bp
 from routes.knowledge_v1 import bp as knowledge_v1_bp
 from routes.nfe import bp as nfe_bp
 from routes.global_memory import bp as global_memory_bp
+from routes.terminal_proxy import bp as terminal_proxy_bp, init_sock as terminal_init_sock
 
 app.register_blueprint(overview_bp)
 app.register_blueprint(workspace_bp)
@@ -621,6 +622,8 @@ app.register_blueprint(knowledge_proxy_bp)
 app.register_blueprint(knowledge_v1_bp)
 app.register_blueprint(nfe_bp)
 app.register_blueprint(global_memory_bp)
+app.register_blueprint(terminal_proxy_bp)
+terminal_init_sock(app)  # inicia WS bridge /terminal/ws
 
 # --------------- Social Auth blueprints ---------------
 from auth.youtube import bp as youtube_auth_bp

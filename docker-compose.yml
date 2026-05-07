@@ -18,12 +18,12 @@ services:
       - ./config:/workspace/config
       - ./workspace:/workspace/workspace
       - ./dashboard/data:/workspace/dashboard/data
-      - ./.claude/agents:/workspace/.claude/agents:ro
+      - ./.claude/agents:/workspace/.claude/agents
       - ./.claude/skills:/workspace/.claude/skills:ro
       - ./.claude/commands:/workspace/.claude/commands:ro
       - ./.claude/templates:/workspace/.claude/templates:ro
       - ./memory:/workspace/memory:ro
-      - ./ADWs/logs:/workspace/ADWs/logs
+      - ./ADWs:/workspace/ADWs
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/version"]
@@ -32,7 +32,7 @@ services:
       retries: 3
       start_period: 15s
 
-  # Telegram — bot that listens for messages
+  # Telegram — bot que escuta mensagens via OpenRouter (openclaude)
   telegram:
     build: .
     container_name: evonexus-telegram
@@ -41,7 +41,11 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - IS_SANDBOX=1
+      - CLAUDE_CODE_USE_OPENAI=1
+      - OPENAI_BASE_URL=https://openrouter.ai/api/v1
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-moonshotai/kimi-k2.6}
     volumes:
       - daily-logs:/workspace/workspace/daily-logs
       - projects:/workspace/workspace/projects
@@ -57,15 +61,19 @@ services:
     stdin_open: true
     tty: true
 
-  # Runner on-demand — to execute routines manually
-  # Usage: docker compose run --rm runner ADWs/routines/good_morning.py
+  # Runner on-demand — para executar rotinas manualmente
+  # Uso: docker compose run --rm runner ADWs/routines/good_morning.py
   runner:
     build: .
     container_name: evonexus-runner
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - IS_SANDBOX=1
+      - CLAUDE_CODE_USE_OPENAI=1
+      - OPENAI_BASE_URL=https://openrouter.ai/api/v1
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-moonshotai/kimi-k2.6}
     volumes:
       - daily-logs:/workspace/workspace/daily-logs
       - projects:/workspace/workspace/projects

@@ -127,13 +127,29 @@ def _log_to_file(log_name, prompt, stdout, stderr, returncode, duration, usage=N
 _ALLOWED_CLI_COMMANDS = frozenset({"claude", "openclaude"})
 
 
-def _spawn_cli(cli_command: str, prompt: str, agent: str | None, provider_env: dict) -> subprocess.Popen:
+def _spawn_cli(
+    cli_command: str,
+    prompt: str,
+    agent: str | None,
+    provider_env: dict,
+    active_model: str | None = None,
+) -> subprocess.Popen:
     """Spawn a CLI process using only hardcoded command strings.
 
     Uses a dictionary lookup so that the subprocess argument is always
     a static string, satisfying semgrep/opengrep subprocess injection rules.
+
+    When `active_model` is provided (non-Anthropic providers), injects
+    ``--model <active_model>`` so the agent .md frontmatter 'model:' field
+    is overridden and the LLM selected in providers.json is actually used.
+    This allows seamless switching between 300+ OpenRouter models, OpenAI,
+    Gemini, Bedrock, etc. without editing each agent file.
     """
     base_args = ["--print", "--dangerously-skip-permissions", "--output-format", "json"]
+    # Override the model hardcoded in the agent .md frontmatter with whatever
+    # is configured in the active provider (e.g. openrouter qwen/..., gpt-4.1, etc.)
+    if active_model:
+        base_args.extend(["--model", active_model])
     if agent:
         base_args.extend(["--agent", agent])
     base_args.append(prompt)
@@ -162,16 +178,21 @@ _ALLOWED_ENV_VARS = frozenset({
 })
 
 
-def _get_provider_config() -> tuple[str, dict]:
-    """Read active provider CLI command and env vars from config/providers.json.
+def _get_provider_config() -> tuple[str, dict, str | None]:
+    """Read active provider CLI command, env vars, and active model from config/providers.json.
 
-    Only allowlisted CLI commands and env var names are returned.
-    For OpenAI-based providers, injects a sensible default OPENAI_MODEL when
-    missing — 'codexplan' for Codex OAuth, 'gpt-4.1' for plain API key mode.
+    Returns a 3-tuple: (cli_command, env_vars, active_model)
+
+    ``active_model`` is the model string to pass via ``--model`` to the CLI.
+    It is set for all non-Anthropic providers so that the model hardcoded in
+    each agent .md frontmatter is overridden at runtime — enabling the system
+    to work with any LLM available on OpenRouter (300+), OpenAI, Gemini, etc.
+    For the native Anthropic provider, returns ``None`` so that the CLI picks
+    the model from the agent .md frontmatter as usual.
     """
     config_path = WORKSPACE / "config" / "providers.json"
     if not config_path.is_file():
-        return "claude", {}
+        return "claude", {}, None
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
         active = config.get("active_provider", "anthropic")
@@ -190,9 +211,25 @@ def _get_provider_config() -> tuple[str, dict]:
                 env_vars["OPENAI_MODEL"] = "codexplan"
             elif active == "openai":
                 env_vars["OPENAI_MODEL"] = "gpt-4.1"
-        return cli, env_vars
+
+        # Resolve the active model to pass as --model to override agent frontmatter.
+        # For the native Anthropic provider we return None — the CLI reads 'model:'
+        # from the agent .md file and uses the Anthropic-native model aliases.
+        # For every other provider the agent frontmatter model is meaningless
+        # (claude aliases don't exist in OpenRouter/OpenAI/Gemini), so we inject
+        # the real model name from the provider config.
+        active_model: str | None = None
+        if active != "anthropic":
+            # Priority: OPENAI_MODEL env var > GEMINI_MODEL > provider default_model
+            active_model = (
+                env_vars.get("OPENAI_MODEL")
+                or env_vars.get("GEMINI_MODEL")
+                or provider.get("default_model")
+            ) or None
+
+        return cli, env_vars, active_model
     except (json.JSONDecodeError, OSError):
-        return "claude", {}
+        return "claude", {}, None
 
 
 def run_claude(prompt: str, log_name: str = "unnamed", timeout: int = 600, agent: str = None) -> dict:
@@ -200,7 +237,12 @@ def run_claude(prompt: str, log_name: str = "unnamed", timeout: int = 600, agent
     Execute AI CLI (claude or openclaude) with streaming output.
 
     Uses the active provider from config/providers.json to determine
-    which binary to run and which env vars to inject.
+    which binary to run, which env vars to inject, and which model to use.
+
+    The active model from providers.json overrides the ``model:`` field in
+    each agent .md frontmatter when the provider is not native Anthropic.
+    This lets all agents work transparently with any LLM available on
+    OpenRouter (300+ models), OpenAI, Gemini, Bedrock, etc.
 
     Args:
         prompt: The prompt to execute
@@ -208,19 +250,27 @@ def run_claude(prompt: str, log_name: str = "unnamed", timeout: int = 600, agent
         timeout: Timeout in seconds
         agent: Agent name (.claude/agents/*.md) — if None, runs without agent
     """
-    cli_command, provider_env = _get_provider_config()
+    cli_command, provider_env, active_model = _get_provider_config()
 
     if agent:
         agent_label = f"@{agent}"
     else:
         agent_label = ""
-    provider_label = f"[{cli_command}]" if cli_command != "claude" else ""
+    # Build a readable label: [openclaude qwen/qwen3...] or [openrouter gpt-4.1] etc.
+    if active_model:
+        short_model = active_model.split("/")[-1] if "/" in active_model else active_model
+        short_model = short_model[:20] + "…" if len(short_model) > 20 else short_model
+        provider_label = f"[{cli_command} {short_model}]"
+    elif cli_command != "claude":
+        provider_label = f"[{cli_command}]"
+    else:
+        provider_label = ""
     console.print(f"  [step]▶[/step] {log_name} [dim]{agent_label} {provider_label}[/dim]", end="")
 
     start_time = datetime.now()
 
     try:
-        process = _spawn_cli(cli_command, prompt, agent, provider_env)
+        process = _spawn_cli(cli_command, prompt, agent, provider_env, active_model)
 
         stdout_lines = []
         line_count = 0

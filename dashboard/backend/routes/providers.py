@@ -56,8 +56,48 @@ ALLOWED_ENV_VARS = frozenset({
 })
 
 
+# Map: env var name -> provider env_var field it should fill when empty.
+# This allows the docker-compose environment to seed the providers.json on
+# first use, preventing "sem API key" errors in Chat mode after fresh deploys.
+_ENV_FALLBACK_MAP = [
+    # (environment variable, providers.json env_vars field)
+    ("OPENAI_API_KEY",  "OPENAI_API_KEY"),
+    ("GEMINI_API_KEY",  "GEMINI_API_KEY"),
+    ("OPENAI_MODEL",    "OPENAI_MODEL"),
+    ("OPENAI_BASE_URL", "OPENAI_BASE_URL"),
+]
+
+
+def _inject_env_fallbacks(config: dict) -> bool:
+    """Auto-fill empty env_vars fields from container environment variables.
+
+    When providers.json has a key that is present but empty (e.g. OPENAI_API_KEY: ""),
+    and the corresponding environment variable IS set (injected via docker-compose),
+    this function copies the env value into the config in-memory.
+
+    Returns True if any value was injected (caller can decide whether to persist).
+    """
+    changed = False
+    for provider in config.get("providers", {}).values():
+        ev = provider.get("env_vars")
+        if not isinstance(ev, dict):
+            continue
+        for env_var, field in _ENV_FALLBACK_MAP:
+            # Only fill if the field exists in the provider but is empty
+            if field in ev and not (ev.get(field) or "").strip():
+                from_env = os.environ.get(env_var, "").strip()
+                if from_env:
+                    ev[field] = from_env
+                    changed = True
+    return changed
+
+
 def _read_config() -> dict:
-    """Read providers.json. If missing, copy from providers.example.json."""
+    """Read providers.json. If missing, copy from providers.example.json.
+
+    Also auto-fills empty API key fields from container environment variables
+    so that the Chat mode works without manual configuration after fresh deploys.
+    """
     try:
         if not PROVIDERS_CONFIG.is_file():
             example = PROVIDERS_CONFIG.parent / "providers.example.json"
@@ -65,7 +105,15 @@ def _read_config() -> dict:
                 import shutil as _shutil
                 _shutil.copy2(example, PROVIDERS_CONFIG)
         if PROVIDERS_CONFIG.is_file():
-            return json.loads(PROVIDERS_CONFIG.read_text(encoding="utf-8"))
+            config = json.loads(PROVIDERS_CONFIG.read_text(encoding="utf-8"))
+            # Auto-fill empty env_var fields from docker-compose / OS env vars.
+            # Persist the result so future reads are also correct.
+            if _inject_env_fallbacks(config):
+                try:
+                    _write_config(config)
+                except OSError:
+                    pass  # Best-effort: use in-memory config even if write fails
+            return config
     except (json.JSONDecodeError, OSError):
         pass
     return {"active_provider": "anthropic", "providers": {}}

@@ -45,6 +45,7 @@ import KnowledgeBrowse from './pages/Knowledge/Browse'
 import KnowledgeSearch from './pages/Knowledge/Search'
 import KnowledgeApiKeys from './pages/Knowledge/ApiKeys'
 import NfeSeparator from './pages/NfeSeparator'
+import ChatPage from './pages/ChatPage'
 
 function AppContent() {
   const location = useLocation()
@@ -52,6 +53,7 @@ function AppContent() {
   const isShare = location.pathname.startsWith('/share/')
   const isAgentDetail = /^\/agents\/[^/]+$/.test(location.pathname)
   const isWorkspace = location.pathname === '/workspace' || location.pathname.startsWith('/workspace/')
+  const isChatPage = location.pathname === '/chat' || location.pathname.startsWith('/chat/')
   const { user, loading, needsSetup, hasPermission } = useAuth()
 
   // Share links are public — render without auth or sidebar
@@ -98,7 +100,7 @@ function AppContent() {
       {/* Pages — responsive margin */}
       <main
         className={
-          isAgentDetail || isWorkspace
+          isAgentDetail || isWorkspace || isChatPage
             ? 'flex-1 ml-0 lg:ml-60 pt-14 lg:pt-0 h-screen overflow-hidden'
             : 'flex-1 ml-0 lg:ml-60 p-4 lg:p-8 pt-16 lg:pt-8 overflow-auto'
         }
@@ -118,6 +120,7 @@ function AppContent() {
           <Route path="/templates" element={<Templates />} />
           <Route path="/scheduler" element={<Scheduler />} />
           <Route path="/nfe-separator" element={<NfeSeparator />} />
+          <Route path="/chat" element={<ChatPage />} />
           {hasPermission('heartbeats', 'view') && <Route path="/heartbeats" element={<HeartbeatsList />} />}
           {hasPermission('heartbeats', 'view') && <Route path="/heartbeats/:id" element={<HeartbeatDetail />} />}
           <Route path="/memory" element={<Memory />} />

@@ -40,6 +40,7 @@ interface AgentChatProps {
   accentColor?: string
   externalLoading?: boolean
   externalError?: string | null
+  autoApprove?: boolean
   onPendingCountChange?: (sessionId: string, count: number) => void
   onNeedsAttention?: (sessionId: string) => void
 }
@@ -73,7 +74,7 @@ type AssistantBlock =
 
 type Status = 'idle' | 'connecting' | 'running' | 'error'
 
-export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', externalLoading = false, externalError = null, onPendingCountChange, onNeedsAttention }: AgentChatProps) {
+export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', externalLoading = false, externalError = null, autoApprove = false, onPendingCountChange, onNeedsAttention }: AgentChatProps) {
   const { dismissBySession } = useNotifications()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -196,6 +197,11 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
 
           case 'permission_request':
             if (msg.requestId) {
+              // Auto-approve: immediately grant permission without user interaction
+              if (autoApprove && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'permission_response', requestId: msg.requestId, approved: true }))
+                break
+              }
               setPendingApprovals(prev => [...prev, {
                 requestId: msg.requestId,
                 toolName: msg.toolName,

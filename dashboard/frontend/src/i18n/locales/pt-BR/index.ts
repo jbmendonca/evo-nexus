@@ -171,6 +171,7 @@ const translations = {
         admin: 'Admin',
       },
       overview: 'Visão geral',
+      chat: 'Chat',
       agents: 'Agentes',
       skills: 'Habilidades',
       memory: 'Memória',
@@ -200,7 +201,7 @@ const translations = {
       logout: 'Sair',
       profile: 'Perfil',
       updateAvailable: 'Atualização disponível: v{{version}}',
-      nfeSeparator: 'Separador Fiscal',
+      nfeSeparator: 'Separador XML',
     },
 
     login: {

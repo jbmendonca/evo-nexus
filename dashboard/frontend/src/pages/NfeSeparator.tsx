@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { Upload, FileDown, AlertCircle, CheckCircle2, FileText, Loader2, Archive, Folder } from 'lucide-react';
+import { useState } from 'react';
+import { Upload, FileDown, AlertCircle, FileText, Loader2, Archive, Folder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface NfeStats {

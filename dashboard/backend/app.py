@@ -374,6 +374,28 @@ with app.app_context():
         _conn.commit()
     # --- End knowledge API keys migration ---
 
+    # --- Global memory migration (chat memory extraction) ---
+    _existing_tables5 = {row[0] for row in _cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "global_memories" not in _existing_tables5:
+        _cur.executescript("""
+            CREATE TABLE IF NOT EXISTS global_memories (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                category TEXT NOT NULL CHECK(category IN ('procedure','learning','solution','config')),
+                source_agent TEXT,
+                source_user TEXT,
+                source_session_id TEXT,
+                tags TEXT DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_gm_category ON global_memories(category);
+            CREATE INDEX IF NOT EXISTS idx_gm_agent ON global_memories(source_agent);
+        """)
+        _conn.commit()
+    # --- End global memory migration ---
+
     # Fix corrupted datetime columns (NULL or non-string values crash SQLAlchemy)
     for _tbl, _col in [("roles", "created_at"), ("users", "created_at"), ("users", "last_login")]:
         try:
@@ -566,6 +588,7 @@ from routes.knowledge_public import bp as knowledge_public_bp
 from routes.knowledge_proxy import bp as knowledge_proxy_bp
 from routes.knowledge_v1 import bp as knowledge_v1_bp
 from routes.nfe import bp as nfe_bp
+from routes.global_memory import bp as global_memory_bp
 
 app.register_blueprint(overview_bp)
 app.register_blueprint(workspace_bp)
@@ -597,6 +620,7 @@ app.register_blueprint(knowledge_public_bp)
 app.register_blueprint(knowledge_proxy_bp)
 app.register_blueprint(knowledge_v1_bp)
 app.register_blueprint(nfe_bp)
+app.register_blueprint(global_memory_bp)
 
 # --------------- Social Auth blueprints ---------------
 from auth.youtube import bp as youtube_auth_bp

@@ -1,16 +1,43 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { Bot, MessageSquare, ChevronDown, Search, X, Sparkles } from 'lucide-react'
+import { useEffect, useState, useCallback, useRef, Component, type ReactNode } from 'react'
+import { Bot, MessageSquare, ChevronDown, Search, X, Sparkles, AlertTriangle } from 'lucide-react'
 import AgentChat from '../components/AgentChat'
 import ChatSessionList, { type ChatSession } from '../components/ChatSessionList'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { getAgentMeta } from '../lib/agent-meta'
 import { useAuth } from '../context/AuthContext'
 import { useNotificationBadge } from '../hooks/useNotificationBadge'
+import { TS_HTTP } from '../lib/terminal-url'
 
-const isLocal = import.meta.env.DEV || /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
-const TS_HTTP = isLocal
-  ? `http://${window.location.hostname}:32352`
-  : `${window.location.origin}/terminal`
+// ── Error Boundary para evitar tela preta em runtime errors ──────────────────
+class ChatErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-[#0C111D]">
+          <div className="text-center space-y-4 max-w-md p-6">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+              <AlertTriangle size={24} className="text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold text-[#e6edf3] mb-2">Erro no Chat</h3>
+              <p className="text-[12px] text-[#667085] mb-3">Ocorreu um erro inesperado. Recarregue a página.</p>
+              <p className="text-[10px] text-red-400/70 font-mono bg-red-500/5 rounded px-2 py-1">{this.state.error.message}</p>
+            </div>
+            <button onClick={() => window.location.reload()} className="px-4 py-2 text-[12px] rounded-lg bg-[#00FFA7]/10 border border-[#00FFA7]/20 text-[#00FFA7] hover:bg-[#00FFA7]/20 transition-colors">
+              Recarregar
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 interface AgentInfo { name: string; label: string; color: string; avatar?: string }
 
@@ -89,43 +116,52 @@ export default function ChatPage() {
   useEffect(() => { if (selectedAgent) try { localStorage.setItem(STORAGE_AGENT, selectedAgent) } catch {} }, [selectedAgent])
   useEffect(() => { if (activeSession) try { localStorage.setItem(STORAGE_SESSION, activeSession) } catch {} }, [activeSession])
 
-  // Load sessions
-  const loadSessions = useCallback(async () => {
-    if (!selectedAgent) return
+  // Load sessions — protegido contra race conditions e erros de rede
+  const loadingSessionsRef = useRef(false)
+  const loadSessions = useCallback(async (agent: string) => {
+    if (!agent || loadingSessionsRef.current) return
+    loadingSessionsRef.current = true
     try {
-      const r = await fetch(`${TS_HTTP}/api/sessions/by-agent/${selectedAgent}`)
+      const r = await fetch(`${TS_HTTP}/api/sessions/by-agent/${encodeURIComponent(agent)}`, { signal: AbortSignal.timeout(8000) })
       if (!r.ok) return
-      const d = await r.json()
-      const list: ChatSession[] = (d.sessions || []).map((s: any) => ({
-        id: s.id, name: s.name || selectedAgent, active: s.active,
+      const d = await r.json().catch(() => ({}))
+      const list: ChatSession[] = ((d.sessions || []) as any[]).map((s: any) => ({
+        id: s.id, name: s.name || agent, active: s.active ?? false,
         preview: s.preview || undefined,
         ts: typeof s.lastActivity === 'number' ? s.lastActivity : (s.lastActivity ? new Date(s.lastActivity).getTime() : undefined),
         ticketId: s.ticketId || null, archived: s.archived || false,
       }))
       setSessions(list)
       setActiveSession(prev => (prev && list.some(s => s.id === prev)) ? prev : (list.length > 0 ? list[0].id : null))
-    } catch {}
-  }, [selectedAgent])
+    } catch {
+      // falha silenciosa — terminal-server pode estar indisponível
+    } finally {
+      loadingSessionsRef.current = false
+    }
+  }, [])
 
-  useEffect(() => { if (selectedAgent) loadSessions() }, [selectedAgent, loadSessions])
+  useEffect(() => { if (selectedAgent) loadSessions(selectedAgent) }, [selectedAgent, loadSessions])
 
-  // Auto-create session
+  // Auto-create session — apenas quando não há sessões e não está carregando
+  const [sessionCreated, setSessionCreated] = useState(false)
   useEffect(() => {
-    if (!selectedAgent || sessions.length > 0) return
-    setConnectErr(null); setConnecting(true)
+    if (!selectedAgent || sessions.length > 0 || connecting || sessionCreated) return
+    setConnectErr(null); setConnecting(true); setSessionCreated(true)
     fetch(`${TS_HTTP}/api/sessions/for-agent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agentName: selectedAgent }),
+      signal: AbortSignal.timeout(10000),
     })
-      .then(r => { if (!r.ok) throw new Error(); return r.json() })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
       .then(d => {
-        if (!d) return
+        if (!d?.sessionId) return
         const s: ChatSession = { id: d.sessionId, name: d.session?.name || selectedAgent, active: d.session?.active ?? false, ts: Date.now() }
         setSessions([s]); setActiveSession(d.sessionId)
       })
-      .catch(() => setConnectErr(`Não foi possível conectar ao terminal-server em ${TS_HTTP}.`))
+      .catch(() => setConnectErr(`Não foi possível conectar ao terminal-server.`))
       .finally(() => setConnecting(false))
-  }, [selectedAgent, sessions.length])
+  }, [selectedAgent, sessions.length, connecting, sessionCreated])
 
   const createSession = useCallback(async () => {
     if (!selectedAgent) return
@@ -133,23 +169,25 @@ export default function ChatPage() {
       const r = await fetch(`${TS_HTTP}/api/sessions/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentName: selectedAgent }),
+        signal: AbortSignal.timeout(10000),
       })
       if (!r.ok) return
-      const d = await r.json()
+      const d = await r.json().catch(() => null)
+      if (!d?.sessionId) return
       const ns: ChatSession = { id: d.sessionId, name: d.session?.name || `${selectedAgent} #${sessions.length + 1}`, active: false, ts: Date.now() }
       setSessions(p => [ns, ...p]); setActiveSession(d.sessionId)
     } catch {}
   }, [selectedAgent, sessions])
 
-  const selectSession = useCallback((id: string) => { setActiveSession(id); setSideOpen(false); loadSessions() }, [loadSessions])
+  const selectSession = useCallback((id: string) => { setActiveSession(id); setSideOpen(false); if (selectedAgent) loadSessions(selectedAgent) }, [loadSessions, selectedAgent])
 
   const renameSession = useCallback(async (id: string, name: string) => {
-    try { await fetch(`${TS_HTTP}/api/sessions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }); loadSessions() } catch {}
-  }, [loadSessions])
+    try { await fetch(`${TS_HTTP}/api/sessions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }); if (selectedAgent) loadSessions(selectedAgent) } catch {}
+  }, [loadSessions, selectedAgent])
 
   const archiveSession = useCallback(async (id: string, archived: boolean) => {
-    try { await fetch(`${TS_HTTP}/api/sessions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived }) }); loadSessions() } catch {}
-  }, [loadSessions])
+    try { await fetch(`${TS_HTTP}/api/sessions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived }) }); if (selectedAgent) loadSessions(selectedAgent) } catch {}
+  }, [loadSessions, selectedAgent])
 
   const deleteSession = useCallback(async (id: string) => {
     try { await fetch(`${TS_HTTP}/api/sessions/${id}`, { method: 'DELETE' }) } catch {}
@@ -158,7 +196,7 @@ export default function ChatPage() {
   }, [sessions])
 
   const pickAgent = useCallback((n: string) => {
-    setSelectedAgent(n); setActiveSession(null); setSessions([]); setConnectErr(null); setDdOpen(false); setDdSearch('')
+    setSelectedAgent(n); setActiveSession(null); setSessions([]); setConnectErr(null); setDdOpen(false); setDdSearch(''); setSessionCreated(false)
   }, [])
 
   const meta = selectedAgent ? getAgentMeta(selectedAgent) : null
@@ -166,6 +204,7 @@ export default function ChatPage() {
   const filtered = ddSearch ? agents.filter(a => a.name.toLowerCase().includes(ddSearch.toLowerCase()) || a.label.toLowerCase().includes(ddSearch.toLowerCase())) : agents
 
   return (
+    <ChatErrorBoundary>
     <div className="flex h-screen bg-[#0C111D] overflow-hidden">
       {/* Mobile toggle */}
       <button onClick={() => setSideOpen(true)} className="lg:hidden fixed top-20 left-4 z-50 p-2 rounded-lg bg-[#182230] border border-[#344054] text-[#D0D5DD] hover:text-[#00FFA7] transition-colors">
@@ -294,5 +333,6 @@ export default function ChatPage() {
         )}
       </main>
     </div>
+    </ChatErrorBoundary>
   )
 }

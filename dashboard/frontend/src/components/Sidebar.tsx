@@ -5,10 +5,17 @@ import { useAuth } from '../context/AuthContext'
 import NotificationBell from './NotificationBell'
 import {
   LayoutDashboard, Bot, Clock, Zap, Layout, Calendar, CalendarClock,
-  Brain, Plug, DollarSign, FolderOpen, Cpu, MessageSquare,
+  Brain, Plug, DollarSign, FolderOpen, Cpu,
   Monitor, Users, ScrollText, LogOut, Menu, X, Shield, BookOpen, Library, Database,
-  ArrowUpCircle, ChevronDown, Webhook, HardDriveDownload, Settings, Share2, Heart, Target, Ticket, Archive
+  ArrowUpCircle, ChevronDown, Webhook, HardDriveDownload, Settings, Share2, Heart, Target, Ticket, Activity, Package,
+  Puzzle, Terminal, MessageCircle, FileDigit
 } from 'lucide-react'
+import {
+  getAllPluginSidebarGroups,
+  getAllPluginPages,
+  type PluginSidebarGroup,
+  type PluginPage,
+} from '../lib/plugin-ui-registry'
 
 interface VersionInfo {
   current: string
@@ -39,7 +46,6 @@ const navGroups: NavGroup[] = [
     collapsible: false,
     items: [
       { to: '/', labelKey: 'overview', icon: LayoutDashboard, resource: null },
-      { to: '/chat', labelKey: 'chat', icon: MessageSquare, resource: null },
     ],
   },
   {
@@ -52,10 +58,12 @@ const navGroups: NavGroup[] = [
       { to: '/tasks', labelKey: 'tasks', icon: CalendarClock, resource: 'tasks' },
       { to: '/triggers', labelKey: 'triggers', icon: Webhook, resource: 'triggers' },
       { to: '/heartbeats', labelKey: 'heartbeats', icon: Heart, resource: 'heartbeats' },
+      { to: '/activity', labelKey: 'activity', icon: Activity, resource: 'scheduler' },
       { to: '/goals', labelKey: 'goals', icon: Target, resource: 'goals' },
-      { to: '/issues', labelKey: 'issues', icon: Ticket, resource: 'tickets' },
+      { to: '/topics', labelKey: 'issues', icon: Ticket, resource: 'tickets' },
       { to: '/templates', labelKey: 'templates', icon: Layout, resource: 'templates' },
-      { to: '/nfe-separator', labelKey: 'nfeSeparator', icon: Archive, resource: null },
+      { to: '/nfe-separator', labelKey: 'nfeSeparator', icon: FileDigit, resource: null },
+      { to: '/chat', labelKey: 'chatPage', icon: MessageCircle, resource: null },
     ],
   },
   {
@@ -78,8 +86,10 @@ const navGroups: NavGroup[] = [
       { to: '/systems', labelKey: 'systems', icon: Monitor, resource: 'systems' },
       { to: '/providers', labelKey: 'providers', icon: Cpu, resource: 'config' },
       { to: '/integrations', labelKey: 'integrations', icon: Plug, resource: 'integrations' },
+      { to: '/mcp-servers', labelKey: 'mcpServers', icon: Terminal, resource: 'config' },
       { to: '/scheduler', labelKey: 'scheduler', icon: Calendar, resource: 'scheduler' },
       { to: '/backups', labelKey: 'backups', icon: HardDriveDownload, resource: 'config' },
+      { to: '/plugins', labelKey: 'plugins', icon: Package, resource: null },
     ],
   },
   {
@@ -122,12 +132,29 @@ export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsedState)
+  // Wave 2.1: plugin sidebar groups — refreshed after registry hydration
+  const [pluginGroups, setPluginGroups] = useState<(PluginSidebarGroup & { slug: string })[]>([])
+  const [pluginPages, setPluginPages] = useState<(PluginPage & { slug: string; bundle_url: string })[]>([])
 
   useEffect(() => {
     fetch('/api/version/check')
       .then((r) => r.json())
       .then((data) => setVersionInfo(data))
       .catch(() => {})
+  }, [])
+
+  // Refresh plugin sidebar groups after registry hydration (hydration is async, runs post-login)
+  useEffect(() => {
+    function refresh() {
+      setPluginGroups(getAllPluginSidebarGroups())
+      setPluginPages(getAllPluginPages())
+    }
+    // Initial read (may be empty before hydration completes)
+    refresh()
+    // Re-read after a short delay to catch async hydration completing
+    const t1 = setTimeout(refresh, 500)
+    const t2 = setTimeout(refresh, 2000)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
 
   const toggleGroup = useCallback((key: string) => {
@@ -204,7 +231,7 @@ export default function Sidebar() {
 
         <div
           className={`overflow-hidden transition-all duration-200 ease-in-out ${
-            group.collapsible && isCollapsed ? 'max-h-0 opacity-0' : 'max-h-[800px] opacity-100'
+            group.collapsible && isCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'
           }`}
         >
           <div className="flex flex-col gap-0.5">
@@ -218,7 +245,7 @@ export default function Sidebar() {
   const sidebarContent = (
     <>
       <div className="px-5 py-6 flex items-center justify-between">
-        <img src="/EVO_NEXUS.png" alt="EvoNexus" className="h-8 w-auto" />
+        <img src="/EVO_NEXUS.webp" alt="EvoNexus" className="h-8 w-auto" />
         <div className="flex items-center gap-1">
           <NotificationBell />
           <button onClick={() => setMobileOpen(false)} className="lg:hidden p-1 rounded hover:bg-white/10 text-[#667085]">
@@ -229,6 +256,69 @@ export default function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         {navGroups.map(renderGroup)}
+
+        {/* Wave 2.1: Plugin sidebar groups injected after native groups */}
+        {pluginGroups.map((group) => {
+          const groupPages = pluginPages.filter(
+            (p) => p.slug === group.slug && p.sidebar_group === group.id
+          )
+          if (groupPages.length === 0) return null
+          const isCollapsed = collapsed[`plugin-${group.slug}-${group.id}`] ?? false
+          const storageKey = `plugin-${group.slug}-${group.id}`
+          return (
+            <div key={storageKey} className="mb-1">
+              {group.collapsible !== false ? (
+                <button
+                  onClick={() => toggleGroup(storageKey)}
+                  className="w-full flex items-center justify-between px-3 py-1.5 mt-2 group cursor-pointer"
+                >
+                  <span className="text-[10px] uppercase tracking-wider text-[#667085] font-semibold select-none">
+                    {group.label}
+                  </span>
+                  <ChevronDown
+                    size={12}
+                    className={`text-[#667085] transition-transform duration-200 group-hover:text-[#D0D5DD] ${
+                      isCollapsed ? '-rotate-90' : ''
+                    }`}
+                  />
+                </button>
+              ) : (
+                <div className="px-3 py-1.5">
+                  <span className="text-[10px] uppercase tracking-wider text-[#667085] font-semibold">
+                    {group.label}
+                  </span>
+                </div>
+              )}
+              <div
+                className={`overflow-hidden transition-all duration-200 ease-in-out ${
+                  group.collapsible !== false && isCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'
+                }`}
+              >
+                <div className="flex flex-col gap-0.5">
+                  {[...groupPages]
+                    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+                    .map((page) => (
+                      <NavLink
+                        key={`${page.slug}-${page.id}`}
+                        to={`/plugins-ui/${page.slug}/${page.path}`}
+                        onClick={() => setMobileOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors border-l-2 ${
+                            isActive
+                              ? 'text-[#00FFA7] bg-[#00FFA7]/10 border-[#00FFA7]'
+                              : 'text-[#667085] hover:text-[#D0D5DD] hover:bg-white/5 border-transparent'
+                          }`
+                        }
+                      >
+                        <Puzzle size={16} />
+                        {page.label}
+                      </NavLink>
+                    ))}
+                </div>
+              </div>
+            </div>
+          )
+        })}
 
         {/* Docs link — standalone at the bottom of nav */}
         <div className="mt-2">

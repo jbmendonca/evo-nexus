@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import HealthBadge from '../components/HealthBadge'
+import PluginWidgetsGrid from '../components/PluginWidgetsGrid'
 
 interface OverviewData {
   metrics: {
@@ -358,7 +359,7 @@ export default function Overview() {
               </div>
               Routines
             </h2>
-            <Link to="/routines" className="text-xs font-medium text-[#667085] hover:text-[#00FFA7] transition-colors flex items-center gap-1">
+            <Link to="/activity" className="text-xs font-medium text-[#667085] hover:text-[#00FFA7] transition-colors flex items-center gap-1">
               View all <ArrowRight size={12} />
             </Link>
           </div>
@@ -404,6 +405,9 @@ export default function Overview() {
           )}
         </div>
       </div>
+
+      {/* Plugin Widgets */}
+      <PluginWidgetsGrid mountPoint="overview" />
 
       {/* Quick Actions */}
       <div className="mb-4">

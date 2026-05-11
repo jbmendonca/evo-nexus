@@ -23,6 +23,11 @@ workspace/projects/*/
 
 # ── Agent memory (runtime, personal) ──────
 .claude/agent-memory/
+# Catch nested .claude/ folders that agents may accidentally create when
+# running from subdirectories (e.g. cd dashboard/frontend && claude ...).
+# The canonical .claude/ lives at the repo root; everything nested is noise.
+**/.claude/agent-memory/
+dashboard/*/.claude/
 memory/**
 !memory/.gitkeep
 
@@ -44,6 +49,7 @@ config/providers.json
 # ── Runtime data & logs ───────────────────
 backups/
 ADWs/logs/
+.claude/scheduled_tasks.lock
 # Runtime DBs may be created in repo root, dashboard/data/ or dashboard/backend/
 *.db
 *.db-shm
@@ -54,7 +60,6 @@ dashboard/backend/*.db-shm
 dashboard/backend/*.db-wal
 dashboard/frontend/node_modules/
 dashboard/terminal-server/node_modules/
-dashboard/terminal-server/package-lock.json
 dashboard/frontend/dist/
 
 # ── Evo Method (separate project) ────────
@@ -77,6 +82,7 @@ config/workspace.yaml
 config/routines.yaml
 config/triggers.yaml
 config/heartbeats.yaml
+config/smart-router.json
 
 # ── Claude Code session data ─────────────
 .claude/projects/
@@ -108,3 +114,23 @@ site/lib/
 mempalace.yaml
 entities.json
 .claude/worktrees/
+
+# ── Plugins (installed plugin directories are not committed) ──
+plugins/*/
+!plugins/.gitkeep
+
+# Plugin-installed files in .claude/ — plugins copy agents/skills/rules/commands
+# with `plugin-{slug}-` prefix. These are per-machine artifacts and must not land
+# in platform PRs. The `_plugins-index.md` marker file in rules/ is regenerated
+# on install/uninstall and is also per-machine.
+.claude/agents/plugin-*
+.claude/skills/plugin-*
+.claude/rules/plugin-*
+.claude/rules/_plugins-index.md
+.claude/commands/plugin-*
+
+# ── Claude hook bootstrap artifacts ──
+.claude/.settings.json.backup-*
+
+# ── Brain Repo raw transcripts (not backed up to brain repo) ──
+memory/raw-transcripts/

@@ -11,17 +11,65 @@ interface AgentTerminalProps {
   accentColor?: string
 }
 
-// In dev mode OR local production (localhost/127.0.0.1), connect directly to terminal-server port.
-// In real deployments (behind reverse proxy), use /terminal path on the same origin.
-const isLocal = import.meta.env.DEV || /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
+// Terminal connection URL resolution.
+//
+// We always go through the dashboard's /terminal proxy in production builds.
+// Direct cross-port fetches (e.g. localhost:32352 from a page served at
+// localhost:8080) are blocked by the dashboard's `connect-src 'self'` CSP
+// directive even when the network path would work. The proxy gives us:
+//   1. Same-origin requests pass CSP `'self'`.
+//   2. No CORS preflight (same origin).
+//   3. Works through SSH tunnels, Tailscale Funnel, or any reverse proxy
+//      that only exposes the dashboard port.
+//
+// Escape hatch for cases where the proxy can't be used (e.g. a static
+// dashboard build hosted somewhere unrelated to the terminal-server): set
+// VITE_TERMINAL_URL at build time to force a specific base URL. When set,
+// it overrides the proxy. Trailing slash is stripped so both
+// `https://x.y/terminal` and `https://x.y/terminal/` work.
+//
+// In Vite's `npm run dev` mode (port 5173, no proxy mounted) we fall back
+// to a direct connection to terminal-server. That path is local-only by
+// definition.
+const rawOverride = (import.meta.env.VITE_TERMINAL_URL as string | undefined)?.trim()
+const terminalOverride = rawOverride ? rawOverride.replace(/\/+$/, '') : null
 
-const CC_WEB_HTTP = isLocal
-  ? `http://${window.location.hostname}:32352`
-  : `${window.location.origin}/terminal`
+const hostname = window.location.hostname
+const isViteDev = import.meta.env.DEV
 
-const CC_WEB_WS = isLocal
-  ? `ws://${window.location.hostname}:32352`
-  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/terminal`
+// Resolve an override URL into the (httpBase, wsBase) pair the rest of the
+// component expects. Accepts either http(s):// or ws(s):// — both schemes
+// are mapped to their counterpart so users can paste whichever they have
+// on hand. Invalid input falls back to the heuristic.
+function resolveOverride(raw: string): { http: string; ws: string } | null {
+  try {
+    const u = new URL(raw)
+    const isSecure = u.protocol === 'https:' || u.protocol === 'wss:'
+    const httpProto = isSecure ? 'https:' : 'http:'
+    const wsProto = isSecure ? 'wss:' : 'ws:'
+    const path = u.pathname.replace(/\/+$/, '') + u.search
+    return {
+      http: `${httpProto}//${u.host}${path}`,
+      ws: `${wsProto}//${u.host}${path}`,
+    }
+  } catch {
+    return null
+  }
+}
+
+const override = terminalOverride ? resolveOverride(terminalOverride) : null
+
+const CC_WEB_HTTP = override
+  ? override.http
+  : isViteDev
+    ? `http://${hostname}:32352`
+    : `${window.location.origin}/terminal`
+
+const CC_WEB_WS = override
+  ? override.ws
+  : isViteDev
+    ? `ws://${hostname}:32352`
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/terminal`
 
 type Status = 'connecting' | 'ready' | 'starting' | 'running' | 'error' | 'exited'
 

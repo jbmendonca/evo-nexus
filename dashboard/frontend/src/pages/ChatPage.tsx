@@ -329,7 +329,7 @@ export default function ChatPage() {
                 </div>
               </header>
               <div className="flex-1 min-h-0 relative z-10">
-                <AgentChat key={`chat-${selectedAgent}-${activeSession || 'default'}`} agent={selectedAgent} sessionId={activeSession || undefined} accentColor={accent} externalLoading={connecting} externalError={connectErr} autoApprove={true} onPendingCountChange={onPending} onNeedsAttention={onAttention} />
+                <AgentChat key={`chat-${selectedAgent}-${activeSession || 'default'}`} agent={selectedAgent} sessionId={activeSession || undefined} accentColor={accent} externalLoading={connecting} externalError={connectErr} onPendingCountChange={onPending} onNeedsAttention={onAttention} />
               </div>
             </>
           )}

@@ -83,7 +83,8 @@ const evoHighlight = HighlightStyle.define([
   { tag: tags.bracket, color: '#D0D5DD' },
 ])
 
-export function languageForPath(path: string): Extension[] {
+export function languageForPath(path: string | unknown): Extension[] {
+  if (typeof path !== 'string' || !path) return []
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
   switch (ext) {
     case 'md':
@@ -110,9 +111,9 @@ export function languageForPath(path: string): Extension[] {
 export function baseExtensions(readOnly: boolean, onSave?: () => void): Extension[] {
   const saveKeymap = onSave
     ? keymap.of([{
-        key: 'Mod-s',
-        run: () => { onSave(); return true },
-      }])
+      key: 'Mod-s',
+      run: () => { onSave(); return true },
+    }])
     : []
 
   return [

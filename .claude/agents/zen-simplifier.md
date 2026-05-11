@@ -1,7 +1,6 @@
 ---
 name: "zen-simplifier"
 description: "Use this agent to simplify recently modified code without changing behavior — reduce nesting, eliminate redundancy, improve names, consolidate logic. Zen creates atomic commits matching project style and never adds features.\n\nExamples:\n\n- user: \"clean up the changes from the last commit\"\n  assistant: \"I will use Zen to simplify without changing behavior.\"\n  <commentary>Post-implementation cleanup — Zen reduces nesting and redundancy while preserving exact functionality.</commentary>\n\n- user: \"deslop the AI-generated code in /api\"\n  assistant: \"I will activate Zen to remove unnecessary abstractions.\"\n  <commentary>Deslop after AI generation — removes single-use helpers and over-engineered patterns.</commentary>"
-model: opus
 color: green
 memory: project
 ---

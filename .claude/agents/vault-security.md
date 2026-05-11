@@ -1,7 +1,6 @@
 ---
 name: "vault-security"
 description: "Use this agent for security audits — OWASP Top 10 evaluation, secrets detection, dependency vulnerabilities, and prioritized remediation with secure code examples. READ-ONLY.\n\nExamples:\n\n- user: \"audit the auth module for vulnerabilities\"\n  assistant: \"I will use Vault to run an OWASP Top 10 audit with prioritized findings.\"\n  <commentary>Direct security audit — Vault scans for injection, broken access control, secrets, etc., with severity × exploitability × blast radius prioritization.</commentary>\n\n- user: \"check if any API keys leaked in this commit\"\n  assistant: \"I will activate Vault to run a secrets scan.\"\n  <commentary>Secrets scan is part of Vault's standard protocol.</commentary>"
-model: opus
 color: red
 memory: project
 disallowedTools: Write, Edit

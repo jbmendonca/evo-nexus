@@ -30,40 +30,47 @@ def _strip_ns(tag: str) -> str:
     """Remove namespace de uma tag XML."""
     return re.sub(r"\{[^}]+\}", "", tag)
 
-def _find_ie(root) -> tuple[str, str]:
+def _find_dest_ie(root) -> tuple[str, str, str]:
     """
-    Extrai (CNPJ, IE) do emitente de uma NF-e.
+    Extrai (doc, IE, nome) do DESTINATÁRIO de uma NF-e.
+    `doc` pode ser CNPJ ou CPF do destinatário.
     Tenta namespace oficial, sem namespace e varredura completa da árvore.
+    Retorna (doc, ie, nome_destinatario).
     """
     NF_NS = "http://www.portalfiscal.inf.br/nfe"
 
     # Estratégia 1 e 2: caminhos explícitos com e sem namespace
-    for c_path, i_path in [
-        (f".//{{{NF_NS}}}emit/{{{NF_NS}}}CNPJ", f".//{{{NF_NS}}}emit/{{{NF_NS}}}IE"),
-        (".//emit/CNPJ",                          (".//emit/IE")),
-    ]:
-        c_el = root.find(c_path)
-        i_el = root.find(i_path)
-        if c_el is not None or i_el is not None:
-            cnpj = (c_el.text or "").strip() if c_el is not None else ""
-            ie   = (i_el.text or "").strip() if i_el is not None else ""
-            if cnpj or ie:
-                return cnpj, ie
-
-    # Estratégia 3: varredura completa — procura elemento <emit> em qualquer nível
-    for elem in root.iter():
-        if _strip_ns(elem.tag) == "emit":
-            cnpj = ie = ""
-            for child in elem:
+    for prefix in [f"{{{NF_NS}}}", ""]:
+        dest_el = root.find(f".//{prefix}dest")
+        if dest_el is not None:
+            doc = ie = nome = ""
+            for child in dest_el:
                 ctag = _strip_ns(child.tag)
-                if ctag == "CNPJ":
-                    cnpj = (child.text or "").strip()
+                if ctag in ("CNPJ", "CPF"):
+                    doc  = (child.text or "").strip()
                 elif ctag == "IE":
                     ie   = (child.text or "").strip()
-            if cnpj or ie:
-                return cnpj, ie
+                elif ctag in ("xNome", "nome"):
+                    nome = (child.text or "").strip()
+            if doc or ie:
+                return doc, ie, nome
 
-    return "", ""
+    # Estratégia 3: varredura completa — procura elemento <dest> em qualquer nível
+    for elem in root.iter():
+        if _strip_ns(elem.tag) == "dest":
+            doc = ie = nome = ""
+            for child in elem:
+                ctag = _strip_ns(child.tag)
+                if ctag in ("CNPJ", "CPF"):
+                    doc  = (child.text or "").strip()
+                elif ctag == "IE":
+                    ie   = (child.text or "").strip()
+                elif ctag in ("xNome", "nome"):
+                    nome = (child.text or "").strip()
+            if doc or ie:
+                return doc, ie, nome
+
+    return "", "", ""
 
 def _is_xml(path: Path) -> bool:
     return path.suffix.lower() == ".xml"
@@ -128,7 +135,7 @@ def _extract_all_zips(zip_path: Path, dest_dir: Path, depth: int = 0) -> list[st
 # ─── Processamento principal ──────────────────────────────────────────────────
 
 def process_zip(zip_path: Path, session_id: str) -> dict:
-    """Extrai ZIP(s), lê XMLs e organiza por IE do emitente."""
+    """Extrai ZIP(s), lê XMLs e organiza por IE do DESTINATÁRIO."""
     out_base = OUTPUT_DIR / session_id
     extract_dir = out_base / "_extracted"
     out_base.mkdir(parents=True, exist_ok=True)
@@ -157,7 +164,8 @@ def process_zip(zip_path: Path, session_id: str) -> dict:
                 content = content[3:]
             root = ET.fromstring(content)
 
-            cnpj, ie = _find_ie(root)
+            # ── Usa DESTINATÁRIO como critério de agrupamento ──────────────────
+            doc, ie, nome_dest = _find_dest_ie(root)
             ie_upper = (ie or "").upper().strip()
             if not ie_upper or ie_upper in ("ISENTO", "0", "00", "N/A", "NA", "SEM IE"):
                 ie = "SEM_IE"
@@ -166,18 +174,22 @@ def process_zip(zip_path: Path, session_id: str) -> dict:
                 ie_safe = re.sub(r"[^\w\-]", "", ie)
 
             folder_name = f"IE_{ie_safe}"
-            dest_dir = out_base / folder_name
-            dest_dir.mkdir(exist_ok=True)
+            dest_folder = out_base / folder_name
+            dest_folder.mkdir(exist_ok=True)
 
-            dest_file = dest_dir / xf.name
+            dest_file = dest_folder / xf.name
             if dest_file.exists():
-                dest_file = dest_dir / f"{xf.stem}_{uuid.uuid4().hex[:6]}.xml"
+                dest_file = dest_folder / f"{xf.stem}_{uuid.uuid4().hex[:6]}.xml"
 
             shutil.copy2(xf, dest_file)
 
             if folder_name not in stats["groups"]:
                 stats["groups"][folder_name] = {
-                    "cnpj": cnpj, "ie": ie, "count": 0, "files": []
+                    "doc": doc,       # CNPJ ou CPF do destinatário
+                    "ie": ie,         # IE do destinatário
+                    "nome": nome_dest, # Razão Social / Nome do destinatário
+                    "count": 0,
+                    "files": [],
                 }
             stats["groups"][folder_name]["count"] += 1
             stats["groups"][folder_name]["files"].append(xf.name)

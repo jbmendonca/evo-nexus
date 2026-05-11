@@ -12,13 +12,14 @@ flask-sock e requests; caso não esteja disponível, o endpoint WS retorna
 Registrado em app.py como blueprint com url_prefix='/terminal'.
 """
 import os
+import sys
 import threading
 import requests
 from flask import Blueprint, request, Response, stream_with_context
 
 TERMINAL_PORT = int(os.environ.get("TERMINAL_SERVER_PORT", 32352))
-TERMINAL_BASE = f"http://localhost:{TERMINAL_PORT}"
-TERMINAL_WS   = f"ws://localhost:{TERMINAL_PORT}"
+TERMINAL_BASE = f"http://127.0.0.1:{TERMINAL_PORT}"
+TERMINAL_WS   = f"ws://127.0.0.1:{TERMINAL_PORT}"
 
 bp = Blueprint("terminal_proxy", __name__, url_prefix="/terminal")
 
@@ -47,9 +48,16 @@ def init_sock(app):
         def terminal_ws(ws):
             """Bridge bidirecional browser ↔ terminal-server."""
             try:
+                qs = request.query_string.decode('utf-8')
+                upstream_url = f"{TERMINAL_WS}/ws"
+                if qs:
+                    upstream_url += f"?{qs}"
+                
                 upstream = _ws_client.WebSocket()
-                upstream.connect(f"{TERMINAL_WS}/ws")
+                upstream.connect(upstream_url)
+                print(f"[terminal_proxy] WS upstream connected to {upstream_url}", file=sys.stderr)
             except Exception as e:
+                print(f"[terminal_proxy] WS upstream connect error: {e}", file=sys.stderr)
                 try:
                     ws.close(message=f"upstream error: {e}")
                 except Exception:
@@ -59,6 +67,7 @@ def init_sock(app):
             stop = threading.Event()
 
             def forward_up():
+                """Browser → upstream (terminal-server)."""
                 try:
                     while not stop.is_set():
                         try:
@@ -68,6 +77,7 @@ def init_sock(app):
                         if data is None:
                             break
                         try:
+                            # simple-websocket gives str for text, bytes for binary
                             upstream.send(data)
                         except Exception:
                             break
@@ -77,15 +87,17 @@ def init_sock(app):
                     stop.set()
 
             def forward_down():
+                """Upstream (terminal-server) → browser."""
                 try:
                     while not stop.is_set():
                         try:
                             data = upstream.recv()
                         except Exception:
                             break
-                        if data is None:
+                        if not data:
                             break
                         try:
+                            # websocket-client recv() returns str for text frames
                             ws.send(data)
                         except Exception:
                             break

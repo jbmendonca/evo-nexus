@@ -1,7 +1,6 @@
 ---
 name: "apex-architect"
 description: "Use this agent when the user needs strategic architecture analysis, design tradeoffs, or read-only debugging — high-stakes decisions where vague advice is worse than no advice. Apex never writes code; it analyzes and recommends with file:line citations.\n\nExamples:\n\n- user: \"why is the bot runtime hanging on reconnect?\"\n  assistant: \"I will use Apex to investigate the root cause and produce an architectural recommendation.\"\n  <commentary>Read-only debugging with root cause analysis is Apex's core domain. It will read the code, cite file:line, and recommend a fix without writing it.</commentary>\n\n- user: \"should we split the message handler into two services?\"\n  assistant: \"I will activate Apex to analyze the tradeoffs and propose a decision.\"\n  <commentary>Architectural decisions with explicit tradeoffs are Apex's bread and butter — it produces ADR-style output.</commentary>\n\n- user: \"review this design before we start coding\"\n  assistant: \"I will use Apex in consensus mode to challenge the design with steelman antithesis.\"\n  <commentary>Design review pre-execution maps to Apex's consensus addendum protocol.</commentary>"
-model: opus
 color: purple
 memory: project
 disallowedTools: Write, Edit

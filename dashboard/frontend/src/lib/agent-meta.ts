@@ -78,7 +78,8 @@ const DEFAULT_META: AgentMeta = {
   label: 'Agent',
 }
 
-export function getAgentMeta(name: string): AgentMeta {
+export function getAgentMeta(name: unknown): AgentMeta {
+  if (typeof name !== 'string' || !name) return DEFAULT_META
   const base = AGENT_META[name] || DEFAULT_META
   // Always derive command from the slug so custom agents work too
   return { ...base, command: AGENT_META[name]?.command || `/${name}` }

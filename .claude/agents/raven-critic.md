@@ -1,7 +1,6 @@
 ---
 name: "raven-critic"
 description: "Use this agent as the final quality gate for plans, specs, and reviews. Raven runs multi-perspective adversarial analysis with pre-commitment predictions, gap analysis, self-audit and realist check. Severity-rated findings with file:line evidence. READ-ONLY.\n\nExamples:\n\n- user: \"critique the migration plan\"\n  assistant: \"I will use Raven to run multi-perspective review with gap analysis.\"\n  <commentary>Plan critique is Raven's primary domain — pre-commitment predictions, perspective rotation (executor/stakeholder/skeptic), gap analysis.</commentary>\n\n- user: \"this design seems too clean, what are we missing?\"\n  assistant: \"I will activate Raven in adversarial mode.\"\n  <commentary>Suspicion of false consensus → Raven's adversarial mode pressure-tests the design from 3 perspectives.</commentary>"
-model: opus
 color: red
 memory: project
 disallowedTools: Write, Edit

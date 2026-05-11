@@ -53,7 +53,9 @@ except AttributeError:
     # Flask <2.2 exposed this through app.config; keep compatibility.
     app.config["JSON_AS_ASCII"] = False
 
-CORS(app, origins=["http://localhost:5173"], supports_credentials=True)
+# Origens permitidas: dev local e domínio de produção
+_allowed_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+CORS(app, origins=_allowed_origins, supports_credentials=True)
 
 # --------------- Database ---------------
 from models import db, User, needs_setup, seed_roles, seed_systems
@@ -247,7 +249,7 @@ with app.app_context():
             _cur.execute("""
                 INSERT INTO goals (slug, project_id, title, target_metric, metric_type, target_value, current_value, status, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, 0, 'active', ?, ?)
-            """, (_gs[0], _gs[1], _gs[2], _gs[3], _gs[4], _gs[5], _now_seed, _now_seed))
+            """, (_gs[0], _gs[1], _gs[2], _gs[3], _gs[4], _gs[5], _gs[6], _now_seed, _now_seed))
         _conn.commit()
     # --- End Goal Cascade migration ---
 
@@ -464,7 +466,7 @@ with app.app_context():
     ).delete()
     db.session.commit()
 
-# --------------- Licensing (register-only, no heartbeat) ───
+# --------------- Licensing (register-only, no heartbeat) ---------------
 from licensing import auto_register_if_needed
 
 with app.app_context():

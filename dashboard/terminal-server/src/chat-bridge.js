@@ -16,9 +16,8 @@ function readTrustMode() {
     const yaml = fs.readFileSync(path.join(WORKSPACE_ROOT, 'config', 'workspace.yaml'), 'utf8');
     const m = yaml.match(/^chat:\s*\n(?:[ \t]+[^\n]*\n)*?[ \t]+trustMode:\s*(true|false)/m);
     return m ? m[1] === 'true' : false;
-  } catch {
-    return false;
-  }
+  } catch { }
+  return false;
 }
 
 const AUTO_APPROVE = new Set([
@@ -90,7 +89,7 @@ function detectCreatedTicketId(text) {
     try {
       const obj = JSON.parse(candidate);
       if (_looksLikeTicket(obj)) return obj.id;
-    } catch {}
+    } catch { }
   }
   const m = text.match(/["']id["']\s*:\s*["']([0-9a-f-]{36})["']/i);
   return m && UUID_RE.test(m[1]) ? m[1] : null;
@@ -115,11 +114,11 @@ function loadProviderConfig() {
     // fallback for codex
     if (active === 'codex_auth' && !env['OPENAI_MODEL']) env['OPENAI_MODEL'] = 'codexplan';
     else if (active === 'openai' && !env['OPENAI_MODEL']) env['OPENAI_MODEL'] = 'gpt-4.1';
-    
+
     // Add explicitly PATH to find openclaude globally
     const home = process.env.HOME || '/root';
     env['PATH'] = `${home}/.local/bin:/usr/local/bin:/usr/bin:${process.env.PATH || ''}`;
-    
+
     return { cli, env, active };
   } catch (err) {
     return { cli: 'openclaude', env: {} };
@@ -153,7 +152,7 @@ class ChatBridge {
     // Agent config
     let finalPrompt = prompt || '';
     let enforcePrompt = '';
-    
+
     if (agentName) {
       const agentDef = loadAgentFile(agentName, cwd);
       if (agentDef) {
@@ -191,8 +190,12 @@ class ChatBridge {
     }
 
     const providerConfig = loadProviderConfig();
+    // NOTE: openclaude requires --verbose when --print + --output-format=stream-json are combined.
+    // Without --verbose it crashes: "Error: When using --print, --output-format=stream-json requires --verbose"
+    // --verbose outputs non-JSON debug lines to stderr only (not stdout), so JSON parsing on stdout is safe.
     const args = [
       '--print',
+      '--verbose',
       finalPrompt,
       '--output-format=stream-json',
       '--input-format=stream-json'
@@ -207,7 +210,7 @@ class ChatBridge {
       args.push('--resume', sdkSessionId);
     }
 
-    console.log(`[chat-bridge] Spawning ${providerConfig.cli} with args:`, args);
+    console.log(`[chat-bridge] Spawning ${providerConfig.cli} with args:`, args.join(' '));
 
     const child = spawn(providerConfig.cli, args, {
       cwd,
@@ -230,29 +233,29 @@ class ChatBridge {
       if (!session.active) return;
       try {
         const msg = JSON.parse(line);
-        
+
         // Intercept permission requests from openclaude JSON stream
         if (msg.type === 'permission_request' || (msg.type === 'system' && msg.subtype === 'permission_request')) {
-            const toolName = msg.tool_name || msg.toolName;
-            const toolInput = msg.tool_input || msg.input || {};
-            const requestId = msg.toolUseID || msg.request_id || `req-${Date.now()}`;
-            
-            if (readTrustMode() || AUTO_APPROVE.has(toolName)) {
-                child.stdin.write(JSON.stringify({ type: 'permission_response', decision: 'allow', toolUseID: requestId }) + '\n');
-                return;
-            }
-            
-            session.pendingApprovals.set(requestId, { toolInput, requestId });
-            if (onMessage) {
-                onMessage({
-                    type: 'permission_request',
-                    requestId,
-                    toolName,
-                    input: toolInput,
-                    agentId: null
-                });
-            }
+          const toolName = msg.tool_name || msg.toolName;
+          const toolInput = msg.tool_input || msg.input || {};
+          const requestId = msg.toolUseID || msg.request_id || `req-${Date.now()}`;
+
+          if (readTrustMode() || AUTO_APPROVE.has(toolName)) {
+            child.stdin.write(JSON.stringify({ type: 'permission_response', decision: 'allow', toolUseID: requestId }) + '\n');
             return;
+          }
+
+          session.pendingApprovals.set(requestId, { toolInput, requestId });
+          if (onMessage) {
+            onMessage({
+              type: 'permission_request',
+              requestId,
+              toolName,
+              input: toolInput,
+              agentId: null
+            });
+          }
+          return;
         }
 
         // Capture session ID
@@ -280,26 +283,36 @@ class ChatBridge {
         }
 
       } catch (e) {
-        // Not a JSON line, ignore or log
+        // Non-JSON line on stdout — log for debugging, do not crash
+        console.error(`[chat-bridge] Non-JSON stdout line:`, line.slice(0, 200));
       }
     });
 
     child.stderr.on('data', (data) => {
-      console.error(`[chat-bridge] STDERR:`, data.toString());
+      // stderr may contain --verbose output; suppress noisy lines, log errors
+      const txt = data.toString();
+      if (txt.includes('Error') || txt.includes('error')) {
+        console.error(`[chat-bridge] STDERR error:`, txt.trim());
+      }
     });
 
-    child.on('close', (code) => {
-      console.log(`[chat-bridge] Child process closed with code ${code}`);
+    child.on('close', (code, signal) => {
+      console.log(`[chat-bridge] Child process exited code=${code} signal=${signal}`);
       session.active = false;
       this.sessions.delete(sessionId);
+      // If crashed (non-zero exit without signal), notify error
+      if ((code !== null && code !== 0) && !signal) {
+        if (onError) onError(new Error(`Agent process exited unexpectedly (code ${code})`));
+      }
       if (onComplete) onComplete({ sdkSessionId: session.sdkSessionId });
     });
 
     child.on('error', (err) => {
-      console.error(`[chat-bridge] Child process error:`, err);
+      console.error(`[chat-bridge] Child process spawn error:`, err.message);
       session.active = false;
       this.sessions.delete(sessionId);
       if (onError) onError(err);
+      if (onComplete) onComplete({ sdkSessionId: session.sdkSessionId });
     });
 
     return { sessionId, sdkSessionId: session.sdkSessionId };
@@ -311,12 +324,12 @@ class ChatBridge {
 
     const sdkSessionId = session.sdkSessionId;
     session.active = false;
-    
+
     if (session.process) {
-      try { session.process.kill('SIGKILL'); } catch (e) {}
+      try { session.process.kill('SIGKILL'); } catch (e) { }
     }
 
-    try { session.abortController.abort(); } catch {}
+    try { session.abortController.abort(); } catch { }
     this.sessions.delete(sessionId);
     return { sdkSessionId };
   }
@@ -324,20 +337,20 @@ class ChatBridge {
   respondToApproval(sessionId, requestId, approved) {
     const session = this.sessions.get(sessionId);
     if (!session?.pendingApprovals || !session.process) return false;
-    
+
     const entry = session.pendingApprovals.get(requestId);
     if (!entry) return false;
-    
+
     session.pendingApprovals.delete(requestId);
-    
+
     // Send response back to openclaude process via stdin
     const decision = approved ? 'allow' : 'deny';
-    session.process.stdin.write(JSON.stringify({ 
-        type: 'permission_response', 
-        decision: decision,
-        toolUseID: requestId 
+    session.process.stdin.write(JSON.stringify({
+      type: 'permission_response',
+      decision: decision,
+      toolUseID: requestId
     }) + '\n');
-    
+
     return true;
   }
 

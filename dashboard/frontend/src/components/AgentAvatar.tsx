@@ -7,7 +7,7 @@ interface AgentAvatarProps {
 }
 
 export function AgentAvatar({ name, size = 48, className = '' }: AgentAvatarProps) {
-  const meta = getAgentMeta(name)
+  const meta = getAgentMeta(typeof name === 'string' ? name : String(name || ''))
   const Icon = meta.icon
 
   if (meta.avatar) {

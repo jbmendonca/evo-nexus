@@ -1,7 +1,6 @@
 ---
 name: "echo-analyst"
 description: "Use this agent BEFORE planning to surface requirement gaps, hidden assumptions, and missing acceptance criteria. Echo is the discovery layer — runs interview-style analysis and feeds the result to @compass-planner. READ-ONLY.\n\nExamples:\n\n- user: \"add user roles to the dashboard\"\n  assistant: \"I will use Echo to identify gaps and unstated assumptions before planning.\"\n  <commentary>Vague feature request. Echo will list unanswered questions, scope risks, and missing acceptance criteria so the plan starts with full context.</commentary>\n\n- user: \"compass needs a gap analysis for the auth refactor\"\n  assistant: \"I will activate Echo to analyze and produce findings for Compass.\"\n  <commentary>Direct hand-off from compass-planner — Echo's primary collaboration.</commentary>"
-model: opus
 color: pink
 memory: project
 disallowedTools: Write, Edit

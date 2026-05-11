@@ -2,17 +2,20 @@ import { useState } from 'react';
 import { Upload, FileDown, AlertCircle, FileText, Loader2, Archive, Folder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+interface NfeGroup {
+  doc: string;   // CNPJ ou CPF do destinatário
+  ie: string;    // Inscrição Estadual do destinatário
+  nome: string;  // Razão Social / Nome do destinatário
+  count: number;
+  files: string[];
+}
+
 interface NfeStats {
   total: number;
   ok: number;
   errors: number;
   skipped: number;
-  groups: Record<string, {
-    cnpj: string;
-    ie: string;
-    count: number;
-    files: string[];
-  }>;
+  groups: Record<string, NfeGroup>;
   error_list: Array<{file: string; error: string}>;
   extract_errors: string[];
 }
@@ -182,7 +185,7 @@ export default function NfeSeparator() {
                 <div className="p-4 border-b border-[#344054] flex items-center justify-between">
                   <h3 className="font-medium text-white flex items-center gap-2">
                     <Folder className="text-[#00FFA7]" size={18} /> 
-                    Grupos Identificados ({Object.keys(stats.groups).length})
+                    Destinatários Encontrados ({Object.keys(stats.groups).length})
                   </h3>
                   {sessionId && (
                     <a 
@@ -196,14 +199,18 @@ export default function NfeSeparator() {
                 <div className="divide-y divide-[#344054] max-h-[500px] overflow-y-auto">
                   {Object.entries(stats.groups).map(([folder, info]) => (
                     <div key={folder} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/5 transition-colors">
-                      <div>
-                        <h4 className="text-[#00FFA7] font-semibold text-sm">{folder}</h4>
-                        <div className="flex gap-4 mt-1 text-xs text-[#667085]">
-                          <span>CNPJ: {info.cnpj || 'N/A'}</span>
+                      <div className="flex-1 min-w-0">
+                        {/* Nome do destinatário (razão social) */}
+                        {info.nome && (
+                          <p className="text-white font-semibold text-sm truncate mb-0.5">{info.nome}</p>
+                        )}
+                        <h4 className="text-[#00FFA7] font-mono text-xs">{folder}</h4>
+                        <div className="flex flex-wrap gap-x-4 mt-1 text-xs text-[#667085]">
+                          <span>CNPJ/CPF: {info.doc || 'N/A'}</span>
                           <span>IE: {info.ie || 'N/A'}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 shrink-0">
                         <span className="text-sm text-[#D0D5DD] bg-[#182230] px-2 py-1 rounded">
                           {info.count} arquivo(s)
                         </span>

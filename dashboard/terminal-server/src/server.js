@@ -582,6 +582,34 @@ class TerminalServer {
                     return;
                   }
 
+                  // Handle complete assistant messages from openclaude --print
+                  // (non-streaming mode returns type 'assistant_message' with all blocks at once)
+                  if (msg.type === 'assistant_message' && msg.blocks) {
+                    if (!isStreaming) {
+                      isStreaming = true;
+                      assistantBlocks = [];
+                    }
+                    // Decompose the complete message into granular events for the frontend
+                    for (const block of msg.blocks) {
+                      if (block.type === 'text' && block.text) {
+                        assistantBlocks.push({ type: 'text', text: block.text });
+                        // Emit synthetic text_start + text_delta so the frontend renders it
+                        this.broadcastToSession(wsInfo.claudeSessionId, { type: 'chat_event', event: { type: 'text_start' } });
+                        this.broadcastToSession(wsInfo.claudeSessionId, { type: 'chat_event', event: { type: 'text_delta', text: block.text } });
+                      } else if (block.type === 'tool_use') {
+                        assistantBlocks.push({
+                          type: 'tool_use',
+                          toolName: block.toolName || block.name,
+                          toolId: block.toolId || block.id,
+                          input: typeof block.input === 'string' ? block.input : JSON.stringify(block.input || {}),
+                          done: true,
+                        });
+                      }
+                    }
+                    // Don't broadcast the raw assistant_message — we already emitted granular events
+                    return;
+                  }
+
                   // Build assistant blocks for history
                   if (msg.type === 'text_start' || msg.type === 'message_start') {
                     if (!isStreaming) {

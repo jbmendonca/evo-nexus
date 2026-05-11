@@ -134,161 +134,161 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
     let cancelled = false
     let ws: WebSocket | null = null
 
-    ;(async () => {
-      // 1) HTTP preflight — fails fast on ECONNREFUSED so we can show a real error
-      //    instead of hanging in 'connecting' forever (same pattern as AgentTerminal).
-      try {
-        const res = await fetch(`${TS_HTTP}/api/health`)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      } catch {
+      ; (async () => {
+        // 1) HTTP preflight — fails fast on ECONNREFUSED so we can show a real error
+        //    instead of hanging in 'connecting' forever (same pattern as AgentTerminal).
+        try {
+          const res = await fetch(`${TS_HTTP}/api/health`)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        } catch {
+          if (cancelled) return
+          setStatus('error')
+          setErrorMsg(`Could not reach terminal-server at ${TS_HTTP}. Is it running?`)
+          return
+        }
         if (cancelled) return
-        setStatus('error')
-        setErrorMsg(`Could not reach terminal-server at ${TS_HTTP}. Is it running?`)
-        return
-      }
-      if (cancelled) return
 
-      // 2) Open WS
-      ws = new WebSocket(`${TS_WS}/ws`)
-      wsRef.current = ws
+        // 2) Open WS
+        ws = new WebSocket(`${TS_WS}/ws`)
+        wsRef.current = ws
 
-      ws.onopen = () => {
-        ws!.send(JSON.stringify({ type: 'join_session', sessionId }))
-        setStatus('idle')
-      }
+        ws.onopen = () => {
+          ws!.send(JSON.stringify({ type: 'join_session', sessionId }))
+          setStatus('idle')
+        }
 
-      ws.onmessage = (ev) => {
-        if (cancelled) return
-        let msg: any
-        try { msg = JSON.parse(ev.data) } catch { return }
+        ws.onmessage = (ev) => {
+          if (cancelled) return
+          let msg: any
+          try { msg = JSON.parse(ev.data) } catch { return }
 
-        switch (msg.type) {
-          case 'session_joined':
-            // Restore chat history from server — preserve uuid from each message
-            if (msg.chatHistory && msg.chatHistory.length > 0) {
-              setMessages(msg.chatHistory.map((m: any) => ({
-                ...m,
-                uuid: m.uuid,
-                streaming: false,
-              })))
-              scrollToBottom()
-            }
-            // Restore ticket binding (Feature 1.3)
-            setTicketId(msg.ticketId || null)
-            break
-
-          case 'chat_history':
-            // Fallback history restore
-            if (msg.messages?.length > 0) {
-              setMessages(msg.messages.map((m: any) => ({ ...m, streaming: false })))
-              scrollToBottom()
-            }
-            break
-
-          case 'chat_event':
-            handleChatEvent(msg.event || msg)
-            break
-
-          case 'ticket_bound':
-            if (msg.ticketId) {
-              setTicketId(msg.ticketId)
-            }
-            break
-
-          case 'permission_request':
-            if (msg.requestId) {
-              // Auto-approve: immediately grant permission without user interaction
-              if (autoApprove && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({ type: 'permission_response', requestId: msg.requestId, approved: true }))
-                break
+          switch (msg.type) {
+            case 'session_joined':
+              // Restore chat history from server — preserve uuid from each message
+              if (msg.chatHistory && msg.chatHistory.length > 0) {
+                setMessages(msg.chatHistory.map((m: any) => ({
+                  ...m,
+                  uuid: m.uuid,
+                  streaming: false,
+                })))
+                scrollToBottom()
               }
-              setPendingApprovals(prev => [...prev, {
-                requestId: msg.requestId,
-                toolName: msg.toolName,
-                input: msg.input || {},
-                title: msg.title || null,
-                description: msg.description || null,
-                createdAt: Date.now(),
-              }])
-              // Request OS notification permission silently on first request
-              if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-                Notification.requestPermission().catch(() => {})
-              }
-              // Fire OS notification when tab is hidden and notifications are enabled
-              if (
-                document.hidden &&
-                typeof Notification !== 'undefined' &&
-                Notification.permission === 'granted' &&
-                localStorage.getItem('evonexus.notifications.enabled') !== 'false'
-              ) {
-                try {
-                  const n = new Notification(`Agent @${agent} is waiting for your approval`, {
-                    body: msg.title || msg.toolName || 'Permission request',
-                    icon: '/favicon.ico',
-                    tag: `approval-${msg.requestId}`,
-                  })
-                  n.onclick = () => { window.focus() }
-                } catch {
-                  // Notification API unavailable (e.g. Firefox private mode) — no-op
-                }
-              }
-            }
-            break
+              // Restore ticket binding (Feature 1.3)
+              setTicketId(msg.ticketId || null)
+              break
 
-          case 'chat_error':
-            setStatus('error')
-            setIsThinking(false)
-            setPendingApprovals([])
-            setErrorMsg(msg.message || 'Unknown error')
-            setMessages(prev => [...prev, { role: 'system', text: `Error: ${msg.message}`, ts: Date.now() }])
-            break
+            case 'chat_history':
+              // Fallback history restore
+              if (msg.messages?.length > 0) {
+                setMessages(msg.messages.map((m: any) => ({ ...m, streaming: false })))
+                scrollToBottom()
+              }
+              break
 
-          case 'chat_complete':
-            setStatus('idle')
-            setIsThinking(false)
-            setPendingApprovals([])
-            // Signal unread response when user is in another tab
-            if (document.hidden && sessionId && onNeedsAttention) {
-              onNeedsAttention(sessionId)
-            }
-            setMessages(prev => {
-              const copy = [...prev]
-              for (let i = copy.length - 1; i >= 0; i--) {
-                if (copy[i].role === 'assistant') {
-                  copy[i] = { ...copy[i], streaming: false } as any
+            case 'chat_event':
+              handleChatEvent(msg.event || msg)
+              break
+
+            case 'ticket_bound':
+              if (msg.ticketId) {
+                setTicketId(msg.ticketId)
+              }
+              break
+
+            case 'permission_request':
+              if (msg.requestId) {
+                // Auto-approve: immediately grant permission without user interaction
+                if (autoApprove && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({ type: 'permission_response', requestId: msg.requestId, approved: true }))
                   break
                 }
+                setPendingApprovals(prev => [...prev, {
+                  requestId: msg.requestId,
+                  toolName: msg.toolName,
+                  input: msg.input || {},
+                  title: msg.title || null,
+                  description: msg.description || null,
+                  createdAt: Date.now(),
+                }])
+                // Request OS notification permission silently on first request
+                if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+                  Notification.requestPermission().catch(() => { })
+                }
+                // Fire OS notification when tab is hidden and notifications are enabled
+                if (
+                  document.hidden &&
+                  typeof Notification !== 'undefined' &&
+                  Notification.permission === 'granted' &&
+                  localStorage.getItem('evonexus.notifications.enabled') !== 'false'
+                ) {
+                  try {
+                    const n = new Notification(`Agent @${agent} is waiting for your approval`, {
+                      body: msg.title || msg.toolName || 'Permission request',
+                      icon: '/favicon.ico',
+                      tag: `approval-${msg.requestId}`,
+                    })
+                    n.onclick = () => { window.focus() }
+                  } catch {
+                    // Notification API unavailable (e.g. Firefox private mode) — no-op
+                  }
+                }
               }
-              return copy
-            })
-            break
+              break
 
-          case 'pong':
-            break
+            case 'chat_error':
+              setStatus('error')
+              setIsThinking(false)
+              setPendingApprovals([])
+              setErrorMsg(msg.message || 'Unknown error')
+              setMessages(prev => [...prev, { role: 'system', text: `Error: ${msg.message}`, ts: Date.now() }])
+              break
+
+            case 'chat_complete':
+              setStatus('idle')
+              setIsThinking(false)
+              setPendingApprovals([])
+              // Signal unread response when user is in another tab
+              if (document.hidden && sessionId && onNeedsAttention) {
+                onNeedsAttention(sessionId)
+              }
+              setMessages(prev => {
+                const copy = [...prev]
+                for (let i = copy.length - 1; i >= 0; i--) {
+                  if (copy[i].role === 'assistant') {
+                    copy[i] = { ...copy[i], streaming: false } as any
+                    break
+                  }
+                }
+                return copy
+              })
+              break
+
+            case 'pong':
+              break
+          }
         }
-      }
 
-      ws.onerror = () => {
-        if (cancelled) return
-        setStatus('error')
-        setErrorMsg('WebSocket error')
-      }
-
-      ws.onclose = () => {
-        if (pingRef.current) { clearInterval(pingRef.current); pingRef.current = null }
-      }
-
-      pingRef.current = setInterval(() => {
-        if (ws!.readyState === WebSocket.OPEN) {
-          ws!.send(JSON.stringify({ type: 'ping' }))
+        ws.onerror = () => {
+          if (cancelled) return
+          setStatus('error')
+          setErrorMsg('WebSocket error')
         }
-      }, 25000)
-    })()
+
+        ws.onclose = () => {
+          if (pingRef.current) { clearInterval(pingRef.current); pingRef.current = null }
+        }
+
+        pingRef.current = setInterval(() => {
+          if (ws!.readyState === WebSocket.OPEN) {
+            ws!.send(JSON.stringify({ type: 'ping' }))
+          }
+        }, 25000)
+      })()
 
     return () => {
       cancelled = true
       if (pingRef.current) { clearInterval(pingRef.current); pingRef.current = null }
-      try { ws?.close() } catch {}
+      try { ws?.close() } catch { }
       wsRef.current = null
     }
   }, [sessionId])
@@ -311,7 +311,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
           setAllSkills(data.skills.sort((a: SkillItem, b: SkillItem) => a.name.localeCompare(b.name)))
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   // Fetch open tickets for this agent when picker opens (Feature 1.3)
@@ -324,7 +324,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
       .then(data => {
         if (data?.tickets) setTickets(data.tickets)
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [showTicketPicker, agent])
 
   const bindTicket = useCallback(async (newTicketId: string | null) => {
@@ -396,7 +396,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
         case 'text_delta': {
           const last = copy[copy.length - 1]
           if (last?.role === 'assistant') {
-            const blocks = [...(last as any).blocks]
+            const blocks = [...((last as any).blocks || [])]
             const lastBlock = blocks[blocks.length - 1]
             if (lastBlock?.type === 'text') {
               blocks[blocks.length - 1] = { ...lastBlock, text: lastBlock.text + (msg.text || '') }
@@ -435,7 +435,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
           }
           const last = copy[copy.length - 1]
           if (last?.role === 'assistant') {
-            const blocks = [...(last as any).blocks]
+            const blocks = [...((last as any).blocks || [])]
             blocks.push({
               type: 'tool_use',
               toolName: msg.toolName,
@@ -458,7 +458,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
           }
           const last = copy[copy.length - 1]
           if (last?.role === 'assistant') {
-            const blocks = [...(last as any).blocks]
+            const blocks = [...((last as any).blocks || [])]
             const lastBlock = blocks[blocks.length - 1]
             if (lastBlock?.type === 'tool_use') {
               blocks[blocks.length - 1] = { ...lastBlock, input: lastBlock.input + (msg.json || '') }
@@ -483,7 +483,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
             for (let mi = copy.length - 1; mi >= 0; mi--) {
               const m = copy[mi]
               if (m.role !== 'assistant') continue
-              const blocks = [...(m as any).blocks]
+              const blocks = [...((m as any).blocks || [])]
               let found = false
               for (let bi = blocks.length - 1; bi >= 0; bi--) {
                 if (blocks[bi].type === 'tool_use' && blocks[bi].toolId === parentId) {
@@ -500,7 +500,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
           }
           const last = copy[copy.length - 1]
           if (last?.role === 'assistant') {
-            const blocks = [...(last as any).blocks]
+            const blocks = [...((last as any).blocks || [])]
             const lastBlock = blocks[blocks.length - 1]
             if (lastBlock?.type === 'tool_use' && !lastBlock.done) {
               blocks[blocks.length - 1] = { ...lastBlock, done: true }
@@ -514,7 +514,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
           // Subagent started — find the Agent tool_use block and enrich it
           const last2 = copy[copy.length - 1]
           if (last2?.role === 'assistant') {
-            const blocks = [...(last2 as any).blocks]
+            const blocks = [...((last2 as any).blocks || [])]
             // Find the Agent tool block by toolUseId or last Agent block
             for (let k = blocks.length - 1; k >= 0; k--) {
               if (blocks[k].type === 'tool_use' && blocks[k].toolName === 'Agent') {
@@ -530,7 +530,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
         case 'task_progress': {
           const last3 = copy[copy.length - 1]
           if (last3?.role === 'assistant') {
-            const blocks = [...(last3 as any).blocks]
+            const blocks = [...((last3 as any).blocks || [])]
             for (let k = blocks.length - 1; k >= 0; k--) {
               if (blocks[k].type === 'tool_use' && blocks[k].toolName === 'Agent' && blocks[k].subagentStatus === 'running') {
                 blocks[k] = { ...blocks[k], subagentSummary: msg.summary || msg.description }
@@ -545,7 +545,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
         case 'task_complete': {
           const last4 = copy[copy.length - 1]
           if (last4?.role === 'assistant') {
-            const blocks = [...(last4 as any).blocks]
+            const blocks = [...((last4 as any).blocks || [])]
             for (let k = blocks.length - 1; k >= 0; k--) {
               if (blocks[k].type === 'tool_use' && blocks[k].toolName === 'Agent') {
                 blocks[k] = { ...blocks[k], subagentStatus: msg.status, done: true }
@@ -561,7 +561,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
           // Show summary text after tool completes
           const last5 = copy[copy.length - 1]
           if (last5?.role === 'assistant' && msg.summary) {
-            const blocks = [...(last5 as any).blocks]
+            const blocks = [...((last5 as any).blocks || [])]
             blocks.push({ type: 'text', text: msg.summary })
             copy[copy.length - 1] = { ...last5, blocks } as any
           }
@@ -660,10 +660,12 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
 
   // Extract plain text from a message for copying
   const getMessageText = (msg: ChatMessage): string => {
-    if (msg.role === 'user' || msg.role === 'system') return msg.text
-    return msg.blocks
-      .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-      .map(b => b.text)
+    if (msg.role === 'user' || msg.role === 'system') return msg.text || ''
+    const blocks = (msg as any).blocks || []
+    return blocks
+      .filter((b: any) => b && b.type === 'text')
+      .map((b: any) => b.text || '')
+      .filter(Boolean)
       .join('\n\n')
   }
 
@@ -674,7 +676,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
     navigator.clipboard.writeText(text).then(() => {
       setCopiedIndex(idx)
       setTimeout(() => setCopiedIndex(prev => prev === idx ? null : prev), 1500)
-    }).catch(() => {})
+    }).catch(() => { })
   }, [])
 
   // Pencil button: enter inline edit mode for the given user message
@@ -812,15 +814,15 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
       const q = query.toLowerCase()
       const filtered = q
         ? allSkills
-            .map(s => {
-              const nameIdx = s.name.toLowerCase().indexOf(q)
-              if (nameIdx === -1) return null
-              return { skill: s, nameIdx }
-            })
-            .filter((x): x is { skill: SkillItem; nameIdx: number } => x !== null)
-            .sort((a, b) => a.nameIdx - b.nameIdx || a.skill.name.localeCompare(b.skill.name))
-            .slice(0, 8)
-            .map(x => x.skill)
+          .map(s => {
+            const nameIdx = s.name.toLowerCase().indexOf(q)
+            if (nameIdx === -1) return null
+            return { skill: s, nameIdx }
+          })
+          .filter((x): x is { skill: SkillItem; nameIdx: number } => x !== null)
+          .sort((a, b) => a.nameIdx - b.nameIdx || a.skill.name.localeCompare(b.skill.name))
+          .slice(0, 8)
+          .map(x => x.skill)
         : allSkills.slice(0, 8)
       setSlashPopup({ open: true, query, items: filtered, selectedIndex: 0, anchorStart })
     } else {
@@ -1155,7 +1157,7 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
                   <AgentAvatar name={agent} size={28} />
                 </div>
                 <div className="flex-1 min-w-0 space-y-2">
-                  {(msg as any).blocks.map((block: AssistantBlock, j: number) => (
+                  {((msg as any).blocks || []).map((block: AssistantBlock, j: number) => (
                     <div key={j}>
                       {block.type === 'text' && (
                         <div className="text-sm text-[#e6edf3] leading-relaxed prose-invert max-w-none">
@@ -1167,14 +1169,19 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
                       )}
                     </div>
                   ))}
+                  {!(msg as any).blocks && (msg as any).text && (
+                    <div className="text-sm text-[#e6edf3] leading-relaxed prose-invert max-w-none">
+                      <Markdown>{(msg as any).text}</Markdown>
+                    </div>
+                  )}
                   {/* Typing indicator — shown while streaming with no visible content yet */}
                   {(msg as any).streaming && (() => {
-                    const blocks = (msg as any).blocks as AssistantBlock[]
+                    const blocks = ((msg as any).blocks || []) as AssistantBlock[]
                     const hasVisibleContent = blocks.some(b => b.type === 'text' || b.type === 'tool_use')
                     return !hasVisibleContent
                   })() && (
-                    <TypingIndicator accentColor={accentColor} isThinking={isThinking} />
-                  )}
+                      <TypingIndicator accentColor={accentColor} isThinking={isThinking} />
+                    )}
                   {/* Copy button — shown on hover when not streaming and there's text to copy */}
                   {!(msg as any).streaming && getMessageText(msg) && (
                     <div className="opacity-0 group-hover/asstmsg:opacity-100 transition-opacity">
@@ -1305,73 +1312,73 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
               </div>
             )}
 
-          {/* Input row */}
-          <div
-            className="flex items-end gap-2 rounded-xl border bg-[#161b22] px-3 py-2"
-            style={{ borderColor: '#21262d' }}
-          >
-            {/* Paperclip button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg text-[#667085] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors mb-0.5"
-              title="Anexar arquivo"
+            {/* Input row */}
+            <div
+              className="flex items-end gap-2 rounded-xl border bg-[#161b22] px-3 py-2"
+              style={{ borderColor: '#21262d' }}
             >
-              <Paperclip size={14} />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files) processFiles(e.target.files)
-                e.target.value = ''
-              }}
-            />
-
-            {/* Textarea */}
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              placeholder={`Message @${agent}...`}
-              rows={1}
-              className="flex-1 resize-none bg-transparent text-sm text-[#e6edf3] placeholder:text-[#667085] focus:outline-none max-h-32 disabled:cursor-not-allowed disabled:opacity-60"
-              style={{ minHeight: '28px' }}
-              onInput={(e) => {
-                const el = e.currentTarget
-                el.style.height = 'auto'
-                el.style.height = Math.min(el.scrollHeight, 128) + 'px'
-              }}
-              disabled={inputDisabled}
-            />
-
-            {/* Send / Stop */}
-            {status === 'running' ? (
+              {/* Paperclip button */}
               <button
-                onClick={stopChat}
-                className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors mb-0.5"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg text-[#667085] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors mb-0.5"
+                title="Anexar arquivo"
               >
-                <Square size={14} />
+                <Paperclip size={14} />
               </button>
-            ) : (
-              <button
-                onClick={sendMessage}
-                disabled={!canSend}
-                className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg border transition-colors mb-0.5"
-                style={{
-                  borderColor: canSend ? `${accentColor}40` : '#21262d',
-                  background: canSend ? `${accentColor}15` : 'transparent',
-                  color: canSend ? accentColor : '#667085',
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) processFiles(e.target.files)
+                  e.target.value = ''
                 }}
-              >
-                <Send size={14} />
-              </button>
-            )}
-          </div>
+              />
+
+              {/* Textarea */}
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder={`Message @${agent}...`}
+                rows={1}
+                className="flex-1 resize-none bg-transparent text-sm text-[#e6edf3] placeholder:text-[#667085] focus:outline-none max-h-32 disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ minHeight: '28px' }}
+                onInput={(e) => {
+                  const el = e.currentTarget
+                  el.style.height = 'auto'
+                  el.style.height = Math.min(el.scrollHeight, 128) + 'px'
+                }}
+                disabled={inputDisabled}
+              />
+
+              {/* Send / Stop */}
+              {status === 'running' ? (
+                <button
+                  onClick={stopChat}
+                  className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors mb-0.5"
+                >
+                  <Square size={14} />
+                </button>
+              ) : (
+                <button
+                  onClick={sendMessage}
+                  disabled={!canSend}
+                  className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg border transition-colors mb-0.5"
+                  style={{
+                    borderColor: canSend ? `${accentColor}40` : '#21262d',
+                    background: canSend ? `${accentColor}15` : 'transparent',
+                    color: canSend ? accentColor : '#667085',
+                  }}
+                >
+                  <Send size={14} />
+                </button>
+              )}
+            </div>
           </div>{/* end input row wrapper (relative) */}
         </div>
 
@@ -1444,7 +1451,7 @@ function ToolCard({ block, accentColor }: { block: Extract<AssistantBlock, { typ
   const [open, setOpen] = useState(false)
 
   let parsedInput: any = null
-  try { parsedInput = JSON.parse(block.input) } catch {}
+  try { parsedInput = JSON.parse(block.input) } catch { }
 
   // Detect Agent/SendMessage tools — render special subagent card
   const isAgentTool = block.toolName === 'Agent' || block.toolName === 'SendMessage'

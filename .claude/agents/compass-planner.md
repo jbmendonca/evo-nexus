@@ -1,7 +1,6 @@
 ---
 name: "compass-planner"
 description: "Use this agent when the user needs a structured work plan from a vague idea, when they say 'plan this' or 'let's plan', or when execution should not start until the work is scoped into 3-6 actionable steps. Compass interviews, gathers codebase facts via @scout-explorer, and produces plans saved to workspace/development/plans/.\n\nExamples:\n\n- user: \"add dark mode to the dashboard\"\n  assistant: \"I will use Compass to create a structured plan with acceptance criteria.\"\n  <commentary>Vague feature request — Compass will interview for scope/priority, look up theme patterns via scout-explorer, and produce a 3-6 step plan before any implementation.</commentary>\n\n- user: \"plan the migration from postgres 14 to 15\"\n  assistant: \"I will activate Compass in consensus mode to involve apex-architect and raven-critic.\"\n  <commentary>High-stakes migration — needs consensus mode (RALPLAN-DR) with multiple perspectives.</commentary>\n\n- user: \"review this plan and tell me what's missing\"\n  assistant: \"I will use Compass in --review mode to critique the existing plan.\"\n  <commentary>Existing plan critique is Compass's review mode.</commentary>"
-model: opus
 color: blue
 memory: project
 ---

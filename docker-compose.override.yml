@@ -1,0 +1,31 @@
+services:
+  dashboard:
+    networks:
+      - default
+      - agro-roraima-sma_agro_network
+    volumes:
+      - /opt/evo-nexus/dashboard/backend/app.py:/workspace/dashboard/backend/app.py
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=agro-roraima-sma_agro_network"
+      
+      # Frontend / API (Flask) on port 8080
+      - "traefik.http.services.evonexus.loadbalancer.server.port=8080"
+      - 'traefik.http.routers.evonexus-api.rule=Host(`open.tkrtecnologia.cloud`) && PathPrefix(`/api`)'
+      - "traefik.http.routers.evonexus-api.priority=10000"
+      - "traefik.http.routers.evonexus-api.entrypoints=websecure"
+      - "traefik.http.routers.evonexus-api.tls=true"
+      - "traefik.http.routers.evonexus-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.evonexus-api.service=evonexus"
+      
+      # Catch-all: Flask handles ALL traffic (including /terminal/ws via flask-sock bridge)
+      - 'traefik.http.routers.evonexus-agents.rule=Host(`agents.tkrtecnologia.net`)'
+      - "traefik.http.routers.evonexus-agents.priority=100"
+      - "traefik.http.routers.evonexus-agents.entrypoints=websecure"
+      - "traefik.http.routers.evonexus-agents.tls=true"
+      - "traefik.http.routers.evonexus-agents.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.evonexus-agents.service=evonexus"
+
+networks:
+  agro-roraima-sma_agro_network:
+    external: true

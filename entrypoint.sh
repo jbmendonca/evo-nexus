@@ -87,6 +87,23 @@ if [ ! -e /workspace/CLAUDE.md ] && [ ! -L /workspace/CLAUDE.md ]; then
     ln -sfn "$CONFIG_DIR/CLAUDE.md" /workspace/CLAUDE.md
 fi
 
+# --- 4b. Validate /root/.claude.json (openclaude config) -------------------
+# This file can become truncated at exactly 4096 bytes due to Docker layer
+# caching, causing a fatal "ConfigParseError: Unterminated string in JSON".
+# We validate it on every boot and regenerate a minimal valid JSON if broken.
+_CLAUDE_JSON="/root/.claude.json"
+if [ -f "$_CLAUDE_JSON" ]; then
+    _PYBIN="/workspace/.venv/bin/python3"
+    [ -x "$_PYBIN" ] || _PYBIN="$(command -v python3 || true)"
+    if [ -n "$_PYBIN" ] && ! "$_PYBIN" -c "import json; json.load(open('$_CLAUDE_JSON'))" 2>/dev/null; then
+        echo "[$(date -Is)] WARNING: $_CLAUDE_JSON is corrupted/truncated — regenerating" >&2
+        printf '{"numStartups":1,"installMethod":"global"}\n' > "$_CLAUDE_JSON"
+    fi
+else
+    printf '{"numStartups":1,"installMethod":"global"}\n' > "$_CLAUDE_JSON"
+fi
+unset _CLAUDE_JSON
+
 # --- 5. Source .env (UI-configured values become env vars) -----------------
 # Using `set -a` so every variable assigned here is auto-exported.
 set -a

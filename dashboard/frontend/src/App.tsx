@@ -58,6 +58,7 @@ const KnowledgeBrowse = lazyDefault(() => import('./pages/Knowledge/Browse'))
 const KnowledgeSearch = lazyDefault(() => import('./pages/Knowledge/Search'))
 const KnowledgeApiKeys = lazyDefault(() => import('./pages/Knowledge/ApiKeys'))
 const NfeSeparator = lazyDefault(() => import('./pages/NfeSeparator'))
+const PdfNfExtractor = lazyDefault(() => import('./pages/PdfNfExtractor'))
 const ChatPage = lazyDefault(() => import('./pages/ChatPage'))
 
 function FullPageRoute({
@@ -256,6 +257,7 @@ function AppContent() {
               <Route path="/templates" element={<Templates />} />
               <Route path="/scheduler" element={<Scheduler />} />
               <Route path="/nfe-separator" element={<NfeSeparator />} />
+              <Route path="/pdf-nf" element={<PdfNfExtractor />} />
               <Route path="/chat" element={<ChatPage />} />
               {hasPermission('heartbeats', 'view') && <Route path="/heartbeats" element={<HeartbeatsList />} />}
               {hasPermission('heartbeats', 'view') && <Route path="/heartbeats/:id" element={<HeartbeatDetail />} />}

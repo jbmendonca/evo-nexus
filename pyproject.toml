@@ -28,10 +28,14 @@ dependencies = [
     "google-genai>=0.3",
     "anthropic>=0.25",
     "marker-pdf>=1.6.1",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.11",
+    "pdf2image>=1.17",
     "watchdog>=4.0",
     "sqlparse>=0.4,<1.0",
     "jsonschema>=4.21",
     "flask-limiter>=3.5",
+    "google-cloud-documentai>=2.20",
 ]
 
 [project.scripts]

@@ -875,6 +875,7 @@ from routes.knowledge_public import bp as knowledge_public_bp
 from routes.knowledge_proxy import bp as knowledge_proxy_bp
 from routes.knowledge_v1 import bp as knowledge_v1_bp
 from routes.nfe import bp as nfe_bp
+from routes.pdf_nf import bp as pdf_nf_bp
 from routes.global_memory import bp as global_memory_bp
 from routes.databases import bp as databases_bp
 from routes.plugins import bp as plugins_bp
@@ -950,6 +951,7 @@ app.register_blueprint(knowledge_public_bp)
 app.register_blueprint(knowledge_proxy_bp)
 app.register_blueprint(knowledge_v1_bp)
 app.register_blueprint(nfe_bp)
+app.register_blueprint(pdf_nf_bp)
 app.register_blueprint(global_memory_bp)
 app.register_blueprint(databases_bp)
 app.register_blueprint(plugins_bp)
@@ -1088,7 +1090,11 @@ def serve_frontend(path):
         return send_from_directory(str(FRONTEND_DIST), path)
     index = FRONTEND_DIST / "index.html"
     if index.exists():
-        return send_from_directory(str(FRONTEND_DIST), "index.html")
+        resp = send_from_directory(str(FRONTEND_DIST), "index.html")
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     return {"error": "Frontend not built. Run npm build in frontend/"}, 404
 
 

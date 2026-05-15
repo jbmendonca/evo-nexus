@@ -116,11 +116,6 @@ class ClaudeBridge {
         if (onExit) onExit(1, null);
         return;
       }
-      if (providerConfig.active !== 'anthropic' && providerMode !== 'code') {
-        throw new Error(
-          `Provider "${providerConfig.active}" com modelo "${providerModel || 'não definido'}" está em modo Chat Completion/Memory Output. Use o Chat para esse modelo. O Terminal aceita apenas modelos Code.`
-        );
-      }
 
       const cliCommand = this.findClaudeCommand(providerConfig.cli_command);
 

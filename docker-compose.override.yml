@@ -18,7 +18,16 @@ services:
       - "traefik.http.routers.evonexus-api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.evonexus-api.service=evonexus"
       
-      # Catch-all: Flask handles ALL traffic (including /terminal/ws via flask-sock bridge)
+      # Direct WebSocket routing to Node.js on port 32352
+      - 'traefik.http.routers.evonexus-ws.rule=Host(`agents.tkrtecnologia.net`) && PathPrefix(`/terminal/ws`)'
+      - "traefik.http.routers.evonexus-ws.priority=200"
+      - "traefik.http.routers.evonexus-ws.entrypoints=websecure"
+      - "traefik.http.routers.evonexus-ws.tls=true"
+      - "traefik.http.routers.evonexus-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.evonexus-ws.service=evonexus-ws"
+      - "traefik.http.services.evonexus-ws.loadbalancer.server.port=32352"
+
+      # Catch-all: Flask handles ALL other traffic
       - 'traefik.http.routers.evonexus-agents.rule=Host(`agents.tkrtecnologia.net`)'
       - "traefik.http.routers.evonexus-agents.priority=100"
       - "traefik.http.routers.evonexus-agents.entrypoints=websecure"

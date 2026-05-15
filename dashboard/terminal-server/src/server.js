@@ -112,14 +112,6 @@ class TerminalServer {
       if (!active || active === 'none') {
         return { status: 'warning', active, detail: 'No provider configured' };
       }
-      if (active !== 'anthropic' && providerMode !== 'code') {
-        return {
-          status: 'warning',
-          active,
-          mode: providerMode,
-          detail: `Provider ${active} is not in code mode`,
-        };
-      }
       return {
         status: 'ok',
         active,
@@ -531,7 +523,32 @@ class TerminalServer {
     await this.ready;
     const server = http.createServer(this.app);
 
-    this.wss = new WebSocket.Server({ server });
+    this.wss = new WebSocket.Server({ noServer: true });
+    
+    server.on('upgrade', async (request, socket, head) => {
+      const cookie = request.headers.cookie;
+      if (!cookie) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      try {
+        const res = await fetch('http://127.0.0.1:8080/api/auth/me', { headers: { cookie } });
+        if (!res.ok) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        this.wss.handleUpgrade(request, socket, head, (ws) => {
+          this.wss.emit('connection', ws, request);
+        });
+      } catch (err) {
+        if (this.dev) console.error('Auth verification failed:', err);
+        socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+        socket.destroy();
+      }
+    });
+
     this.wss.on('connection', (ws, req) => this.handleWebSocketConnection(ws, req));
 
     return new Promise((resolve, reject) => {

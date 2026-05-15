@@ -8,7 +8,7 @@ import {
   Brain, Plug, DollarSign, FolderOpen, Cpu,
   Monitor, Users, ScrollText, LogOut, Menu, X, Shield, BookOpen, Library, Database,
   ArrowUpCircle, ChevronDown, Webhook, HardDriveDownload, Settings, Share2, Heart, Target, Ticket, Activity, Package,
-  Puzzle, Terminal, MessageCircle, FileDigit
+  Puzzle, Terminal, MessageCircle, FileDigit, FileSearch2
 } from 'lucide-react'
 import {
   getAllPluginSidebarGroups,
@@ -53,6 +53,9 @@ const navGroups: NavGroup[] = [
     collapsible: true,
     items: [
       { to: '/agents', labelKey: 'agents', icon: Bot, resource: 'agents' },
+      { to: '/chat', labelKey: 'chatPage', icon: MessageCircle, resource: null },
+      { to: '/nfe-separator', labelKey: 'nfeSeparator', icon: FileDigit, resource: null },
+      { to: '/pdf-nf', labelKey: 'pdfNfExtractor', icon: FileSearch2, resource: null },
       { to: '/skills', labelKey: 'skills', icon: Zap, resource: 'skills' },
       { to: '/routines', labelKey: 'routines', icon: Clock, resource: 'routines' },
       { to: '/tasks', labelKey: 'tasks', icon: CalendarClock, resource: 'tasks' },
@@ -62,8 +65,6 @@ const navGroups: NavGroup[] = [
       { to: '/goals', labelKey: 'goals', icon: Target, resource: 'goals' },
       { to: '/topics', labelKey: 'issues', icon: Ticket, resource: 'tickets' },
       { to: '/templates', labelKey: 'templates', icon: Layout, resource: 'templates' },
-      { to: '/nfe-separator', labelKey: 'nfeSeparator', icon: FileDigit, resource: null },
-      { to: '/chat', labelKey: 'chatPage', icon: MessageCircle, resource: null },
     ],
   },
   {

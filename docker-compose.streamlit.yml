@@ -1,0 +1,25 @@
+services:
+  ciss-dashboard:
+    image: python:3.11-slim
+    container_name: evonexus-ciss-dashboard
+    volumes:
+      - ./dashboard/streamlit_app:/app
+      - ./dashboard/data:/app/data
+    working_dir: /app
+    command: bash -c "pip install -r requirements.txt && streamlit run app.py --server.port 8501 --server.baseUrlPath /streamlit --server.address 0.0.0.0"
+    restart: unless-stopped
+    networks:
+      - TkrNet
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ciss-dashboard.rule=Host(`paubrasil.tkrtecnologia.cloud`) && PathPrefix(`/streamlit`)"
+      - "traefik.http.routers.ciss-dashboard.priority=1000"
+      - "traefik.http.routers.ciss-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.ciss-dashboard.tls=true"
+      - "traefik.http.routers.ciss-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ciss-dashboard.loadbalancer.server.port=8501"
+      - "traefik.docker.network=TkrNet"
+
+networks:
+  TkrNet:
+    external: true

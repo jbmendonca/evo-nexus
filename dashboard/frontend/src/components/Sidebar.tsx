@@ -8,7 +8,7 @@ import {
   Brain, Plug, DollarSign, FolderOpen, Cpu,
   Monitor, Users, ScrollText, LogOut, Menu, X, Shield, BookOpen, Library, Database,
   ArrowUpCircle, ChevronDown, Webhook, HardDriveDownload, Settings, Share2, Heart, Target, Ticket, Activity, Package,
-  Puzzle, Terminal, MessageCircle, FileDigit, FileSearch2
+  Puzzle, Terminal, MessageCircle, FileDigit, FileSearch2, BarChart
 } from 'lucide-react'
 import {
   getAllPluginSidebarGroups,
@@ -72,6 +72,8 @@ const navGroups: NavGroup[] = [
     collapsible: true,
     items: [
       { to: '/workspace', labelKey: 'workspace', icon: FolderOpen, resource: 'workspace' },
+      { to: '/ciss-analytics', labelKey: 'painelVendas', icon: BarChart, resource: null },
+      { to: '/painel-clientes', labelKey: 'painelClientes', icon: Users, resource: null },
       { to: '/shares', labelKey: 'shareLinks', icon: Share2, resource: 'workspace' },
       { to: '/memory', labelKey: 'memory', icon: Brain, resource: 'memory' },
       { to: '/mempalace', labelKey: 'mempalace', icon: Library, resource: 'mempalace' },

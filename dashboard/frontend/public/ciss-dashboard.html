@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CISS Analytics — Dashboard Executivo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e1a;--surface:#111827;--surface2:#1a2235;--border:#1e2d47;
+  --accent:#3b82f6;--accent2:#8b5cf6;--green:#10b981;--red:#ef4444;--yellow:#f59e0b;
+  --text:#e2e8f0;--muted:#64748b;--white:#fff;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:linear-gradient(135deg,#1e3a5f,#0f2744);padding:20px 32px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.header h1{font-size:1.4rem;font-weight:700;background:linear-gradient(90deg,#60a5fa,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header .sub{color:var(--muted);font-size:.8rem;margin-top:2px}
+.sync-btn{background:var(--accent);color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;transition:.2s}
+.sync-btn:hover{background:#2563eb}
+.container{max-width:1400px;margin:0 auto;padding:24px 32px}
+
+/* KPI Cards */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;position:relative;overflow:hidden;transition:.3s}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.kpi-card.blue::before{background:linear-gradient(90deg,#3b82f6,#60a5fa)}
+.kpi-card.purple::before{background:linear-gradient(90deg,#8b5cf6,#a78bfa)}
+.kpi-card.green::before{background:linear-gradient(90deg,#10b981,#34d399)}
+.kpi-card.yellow::before{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+.kpi-card.red::before{background:linear-gradient(90deg,#ef4444,#f87171)}
+.kpi-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.kpi-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
+.kpi-value{font-size:1.8rem;font-weight:800;line-height:1}
+.kpi-sub{font-size:.75rem;color:var(--muted);margin-top:6px}
+.badge-up{color:var(--green);font-weight:600}
+.badge-down{color:var(--red);font-weight:600}
+
+/* Charts grid */
+.charts-grid{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:28px}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px}
+.chart-card h2{font-size:.95rem;font-weight:700;margin-bottom:16px;color:var(--text)}
+.chart-card canvas{max-height:260px}
+
+/* Tables */
+.tables-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px}
+.table-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px}
+.table-card h2{font-size:.95rem;font-weight:700;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{text-align:left;color:var(--muted);font-weight:600;padding:8px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:.72rem;letter-spacing:.04em}
+td{padding:10px 0;border-bottom:1px solid rgba(30,45,71,.5);color:var(--text)}
+tr:last-child td{border-bottom:none}
+.rank{color:var(--muted);font-weight:700;width:28px}
+
+/* Alertas */
+.alerts-section{margin-bottom:28px}
+.alerts-section h2{font-size:.95rem;font-weight:700;margin-bottom:16px}
+.alerts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.alert-card{border-radius:12px;padding:16px;border-left:4px solid;display:flex;align-items:flex-start;gap:12px}
+.alert-card.critico{background:rgba(239,68,68,.1);border-color:#ef4444}
+.alert-card.alerta{background:rgba(245,158,11,.1);border-color:#f59e0b}
+.alert-card.atencao{background:rgba(59,130,246,.1);border-color:#3b82f6}
+.alert-icon{font-size:1.4rem;flex-shrink:0}
+.alert-name{font-weight:700;font-size:.88rem;margin-bottom:4px}
+.alert-detail{font-size:.78rem;color:var(--muted)}
+
+/* Insights */
+.insights-section{margin-bottom:28px}
+.insights-section h2{font-size:.95rem;font-weight:700;margin-bottom:16px}
+.insights-list{display:flex;flex-direction:column;gap:10px}
+.insight-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:.87rem;line-height:1.5;border-left:3px solid var(--accent)}
+
+/* Loading */
+.loading{text-align:center;color:var(--muted);padding:40px;font-size:.9rem}
+.spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Forecast row */
+.forecast-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px}
+
+/* Segmentos */
+.seg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.seg-card{background:var(--surface2);border-radius:10px;padding:14px;text-align:center}
+.seg-name{font-size:.8rem;margin-bottom:6px;color:var(--muted)}
+.seg-count{font-size:1.6rem;font-weight:800}
+.seg-value{font-size:.75rem;color:var(--muted);margin-top:4px}
+
+/* Sinc info */
+.sinc-bar{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;font-size:.8rem;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+@media(max-width:900px){
+  .charts-grid,.tables-grid,.forecast-row{grid-template-columns:1fr}
+  .container{padding:16px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>🏪 CISS Analytics — Dashboard Executivo</h1>
+    <div class="sub">Análise de vendas, clientes, estoque e insights de IA</div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <select id="periodo" onchange="carregarTudo()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:.85rem;cursor:pointer">
+      <option value="7">Últimos 7 dias</option>
+      <option value="30" selected>Últimos 30 dias</option>
+      <option value="90">Últimos 90 dias</option>
+    </select>
+    <button class="sync-btn" onclick="triggerETL('vendas')">⟳ Sincronizar</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="sinc-bar">
+    <span><span class="dot"></span> Sistema ativo — dados sincronizados via API CISS Web</span>
+    <span id="ultima-sinc">Verificando...</span>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="loading"><span class="spinner"></span>Carregando KPIs...</div>
+  </div>
+
+  <!-- Gráficos principais -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h2>📈 Evolução de Vendas + Previsão</h2>
+      <canvas id="chart-vendas"></canvas>
+    </div>
+    <div class="chart-card">
+      <h2>🛒 Top Produtos (Valor R$)</h2>
+      <canvas id="chart-produtos"></canvas>
+    </div>
+  </div>
+
+  <!-- Tabelas -->
+  <div class="tables-grid">
+    <div class="table-card">
+      <h2>🏆 Top Clientes</h2>
+      <table id="tbl-clientes"><tr><td class="loading">Carregando...</td></tr></table>
+    </div>
+    <div class="table-card">
+      <h2>📦 Produtos Mais Vendidos</h2>
+      <table id="tbl-produtos"><tr><td class="loading">Carregando...</td></tr></table>
+    </div>
+  </div>
+
+  <!-- Segmentos RFM -->
+  <div class="table-card" style="margin-bottom:28px">
+    <h2 style="margin-bottom:16px">👥 Segmentação de Clientes (RFM)</h2>
+    <div class="seg-grid" id="seg-grid"><div class="loading">Carregando...</div></div>
+  </div>
+
+  <!-- Alertas de Estoque -->
+  <div class="alerts-section">
+    <h2>🚨 Alertas de Estoque</h2>
+    <div class="alerts-grid" id="alerts-grid"><div class="loading">Carregando...</div></div>
+  </div>
+
+  <!-- Insights ML -->
+  <div class="insights-section">
+    <h2>🤖 Insights de Inteligência Artificial</h2>
+    <div class="insights-list" id="insights-list"><div class="loading">Gerando insights...</div></div>
+  </div>
+
+</div>
+
+<script>
+const API = '';  // mesmo host
+let chartVendas = null;
+let chartProdutos = null;
+
+function getPeriodo() { return document.getElementById('periodo').value; }
+
+async function fetchAPI(path) {
+  const r = await fetch(`${API}/api/ciss${path}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+function fmtBRL(v) {
+  return 'R$ ' + Number(v||0).toLocaleString('pt-BR', {minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtNum(v) { return Number(v||0).toLocaleString('pt-BR'); }
+
+// ── KPIs ──────────────────────────────────────────────────────────────────────
+async function carregarKPIs() {
+  try {
+    const d = await fetchAPI(`/dashboard/kpis?periodo=${getPeriodo()}`);
+    const cr = d.crescimento_pct || 0;
+    const crBadge = cr >= 0
+      ? `<span class="badge-up">▲ ${cr.toFixed(1)}%</span>`
+      : `<span class="badge-down">▼ ${Math.abs(cr).toFixed(1)}%</span>`;
+
+    document.getElementById('kpi-grid').innerHTML = `
+      <div class="kpi-card blue">
+        <div class="kpi-label">Total de Vendas</div>
+        <div class="kpi-value">${fmtBRL(d.total_vendas)}</div>
+        <div class="kpi-sub">${crBadge} vs período anterior</div>
+      </div>
+      <div class="kpi-card purple">
+        <div class="kpi-label">Transações</div>
+        <div class="kpi-value">${fmtNum(d.num_transacoes)}</div>
+        <div class="kpi-sub">Pedidos realizados</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-label">Ticket Médio</div>
+        <div class="kpi-value">${fmtBRL(d.ticket_medio)}</div>
+        <div class="kpi-sub">Por venda</div>
+      </div>
+      <div class="kpi-card yellow">
+        <div class="kpi-label">Clientes Ativos</div>
+        <div class="kpi-value">${fmtNum(d.clientes_ativos)}</div>
+        <div class="kpi-sub">Com compras no período</div>
+      </div>
+      <div class="kpi-card blue">
+        <div class="kpi-label">Vendas Hoje</div>
+        <div class="kpi-value">${fmtBRL(d.vendas_hoje)}</div>
+        <div class="kpi-sub">${fmtNum(d.transacoes_hoje)} transações</div>
+      </div>
+    `;
+
+    if (d.ultima_sincronizacao) {
+      const sinc = d.ultima_sincronizacao;
+      document.getElementById('ultima-sinc').textContent =
+        `Última sync: ${sinc.concluido_em || ''} — Status: ${sinc.status || ''}`;
+    }
+  } catch(e) {
+    document.getElementById('kpi-grid').innerHTML = `<div class="loading">Erro ao carregar KPIs: ${e.message}</div>`;
+  }
+}
+
+// ── Chart Vendas + Previsão ───────────────────────────────────────────────────
+async function carregarChartVendas() {
+  try {
+    const [serie, forecast] = await Promise.all([
+      fetchAPI(`/dashboard/vendas-diarias?periodo=${getPeriodo()}`),
+      fetchAPI('/insights/previsao')
+    ]);
+
+    const labels = [
+      ...(serie.serie||[]).map(r => r.data_ref),
+      ...(forecast.previsao||[]).map(r => r.data)
+    ];
+    const real = (serie.serie||[]).map(r => r.total_vendas);
+    const prev = (forecast.previsao||[]).map(r => r.vendas_previstas);
+    const prevMin = (forecast.previsao||[]).map(r => r.confianca_min);
+    const prevMax = (forecast.previsao||[]).map(r => r.confianca_max);
+    const padding = Array(real.length).fill(null);
+
+    const ctx = document.getElementById('chart-vendas').getContext('2d');
+    if (chartVendas) chartVendas.destroy();
+    chartVendas = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Vendas Reais',
+            data: real,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59,130,246,.1)',
+            borderWidth: 2,
+            pointRadius: 2,
+            fill: true,
+            tension: .4
+          },
+          {
+            label: 'Previsão',
+            data: [...padding, ...prev],
+            borderColor: '#8b5cf6',
+            borderDash: [5,5],
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            tension: .4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { color: '#64748b', maxTicksLimit: 10 }, grid: { color: '#1e2d47' } },
+          y: { ticks: { color: '#64748b', callback: v => 'R$'+v.toLocaleString('pt-BR') }, grid: { color: '#1e2d47' } }
+        }
+      }
+    });
+  } catch(e) { console.warn('Chart vendas:', e); }
+}
+
+// ── Chart Top Produtos ────────────────────────────────────────────────────────
+async function carregarChartProdutos() {
+  try {
+    const d = await fetchAPI(`/dashboard/top-produtos?periodo=${getPeriodo()}&limit=8`);
+    const prods = d.produtos || [];
+    const ctx = document.getElementById('chart-produtos').getContext('2d');
+    if (chartProdutos) chartProdutos.destroy();
+    chartProdutos = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: prods.map(p => p.nome_produto ? p.nome_produto.substring(0,20) : ''),
+        datasets: [{
+          label: 'Valor R$',
+          data: prods.map(p => p.total_valor),
+          backgroundColor: prods.map((_,i) => `hsl(${220+i*15},70%,${50+i*3}%)`),
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#64748b', callback: v => 'R$'+v.toLocaleString('pt-BR') }, grid: { color: '#1e2d47' } },
+          y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+        }
+      }
+    });
+
+    // Também preenche a tabela
+    const tbl = document.getElementById('tbl-produtos');
+    tbl.innerHTML = `<tr><th class="rank">#</th><th>Produto</th><th>Qtd</th><th>Valor</th></tr>` +
+      prods.map((p,i) => `
+        <tr>
+          <td class="rank">${i+1}</td>
+          <td>${p.nome_produto||'-'}</td>
+          <td>${fmtNum(p.total_qtd)}</td>
+          <td>${fmtBRL(p.total_valor)}</td>
+        </tr>
+      `).join('');
+  } catch(e) { console.warn('Chart produtos:', e); }
+}
+
+// ── Tabela Top Clientes ───────────────────────────────────────────────────────
+async function carregarTopClientes() {
+  try {
+    const d = await fetchAPI(`/dashboard/top-clientes?periodo=${getPeriodo()}&limit=10`);
+    const clientes = d.clientes || [];
+    document.getElementById('tbl-clientes').innerHTML =
+      `<tr><th class="rank">#</th><th>Cliente</th><th>Compras</th><th>Valor</th></tr>` +
+      clientes.map((c,i) => `
+        <tr>
+          <td class="rank">${i+1}</td>
+          <td>${c.nome||'-'}<br><small style="color:var(--muted)">${c.cidade||''} ${c.estado||''}</small></td>
+          <td>${fmtNum(c.num_compras)}</td>
+          <td>${fmtBRL(c.total_compras)}</td>
+        </tr>
+      `).join('');
+  } catch(e) { console.warn('Clientes:', e); }
+}
+
+// ── Segmentos RFM ─────────────────────────────────────────────────────────────
+async function carregarSegmentos() {
+  try {
+    const d = await fetchAPI('/clientes/segmentos');
+    const segs = d.segmentos || {};
+    document.getElementById('seg-grid').innerHTML =
+      Object.entries(segs).map(([k,v]) => `
+        <div class="seg-card">
+          <div class="seg-name">${v.nome_display||k}</div>
+          <div class="seg-count">${v.count}</div>
+          <div class="seg-value">${fmtBRL(v.total_vendas)}</div>
+        </div>
+      `).join('') || '<div class="loading">Sem dados</div>';
+  } catch(e) { console.warn('Segmentos:', e); }
+}
+
+// ── Alertas de Estoque ────────────────────────────────────────────────────────
+async function carregarAlertas() {
+  try {
+    const d = await fetchAPI('/estoque/alertas');
+    const todos = [...(d.critico||[]), ...(d.alerta||[]), ...(d.atencao||[])];
+    if (!todos.length) {
+      document.getElementById('alerts-grid').innerHTML = `
+        <div style="color:var(--green);padding:12px;font-weight:600">✅ Nenhum alerta de estoque no momento</div>`;
+      return;
+    }
+    document.getElementById('alerts-grid').innerHTML = todos.slice(0,12).map(p => {
+      const icons = {critico:'🚨',alerta:'⚠️',atencao:'ℹ️'};
+      const diasTxt = p.dias_cobertura ? `~${Math.round(p.dias_cobertura)} dias restantes` : 'Sem consumo registrado';
+      return `
+        <div class="alert-card ${p.nivel_alerta}">
+          <div class="alert-icon">${icons[p.nivel_alerta]||'📦'}</div>
+          <div>
+            <div class="alert-name">${p.nome||p.codigo||'-'}</div>
+            <div class="alert-detail">Qtd: ${p.quantidade_atual} | Mín: ${p.estoque_minimo}</div>
+            <div class="alert-detail">${diasTxt}</div>
+            ${p.data_ruptura_prevista ? `<div class="alert-detail" style="color:var(--red)">Ruptura prevista: ${p.data_ruptura_prevista}</div>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { console.warn('Alertas:', e); }
+}
+
+// ── Insights ML ───────────────────────────────────────────────────────────────
+async function carregarInsights() {
+  try {
+    const d = await fetchAPI('/insights');
+    const frases = d.frases_insight || [];
+    document.getElementById('insights-list').innerHTML =
+      frases.length
+        ? frases.map(f => `<div class="insight-item">${f}</div>`).join('')
+        : '<div class="loading">Nenhum insight disponível ainda</div>';
+  } catch(e) { console.warn('Insights:', e); }
+}
+
+// ── ETL Manual ────────────────────────────────────────────────────────────────
+async function triggerETL(tipo) {
+  const btn = document.querySelector('.sync-btn');
+  btn.textContent = '⟳ Sincronizando...';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/ciss/etl/trigger', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({tipo})
+    });
+    const d = await r.json();
+    btn.textContent = '✓ Iniciado!';
+    setTimeout(() => { btn.textContent = '⟳ Sincronizar'; btn.disabled = false; carregarTudo(); }, 3000);
+  } catch(e) {
+    btn.textContent = '✗ Erro';
+    setTimeout(() => { btn.textContent = '⟳ Sincronizar'; btn.disabled = false; }, 2000);
+  }
+}
+
+// ── Carga principal ───────────────────────────────────────────────────────────
+async function carregarTudo() {
+  await Promise.allSettled([
+    carregarKPIs(),
+    carregarChartVendas(),
+    carregarChartProdutos(),
+    carregarTopClientes(),
+    carregarSegmentos(),
+    carregarAlertas(),
+    carregarInsights(),
+  ]);
+}
+
+// Iniciar
+carregarTudo();
+// Auto-refresh a cada 5 minutos
+setInterval(carregarTudo, 5 * 60 * 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "projeto": "EvoNexus Pau Brasil",
+  "ambiente": {
+    "dominio": "paubrasil.tkrtecnologia.cloud",
+    "vps_ativa": "72.60.10.135",
+    "app_path": "/opt/evo-nexus"
+  },
+  "objetivos": [
+    "Manter painel de vendas e painel de clientes operacionais",
+    "Garantir integração CISS estável e auditável",
+    "Sustentar DW analítico para operação e gestão"
+  ],
+  "estado_atual": {
+    "painel_vendas": "ok",
+    "painel_clientes": "ok",
+    "ciss_analytics": "ok",
+    "integrim_auth": "ok"
+  },
+  "restauracao_2026_05_17": {
+    "acoes": [
+      "Reprocessamento do vínculo venda-cliente via get_pedido_venda",
+      "Propagação de id_cliente para itens de venda",
+      "Materialização de métricas de cliente e cliente x produto",
+      "Fallback de extração em get_pedido_venda_prod (campos de data)",
+      "Atualização de rótulos de menu para Painel de Venda e Painel de Clientes"
+    ],
+    "metricas_pos_restauro": {
+      "dw_vendas_com_cliente": 13479,
+      "dw_itens_venda_com_cliente": 41203,
+      "dw_cliente_metricas": 2205,
+      "dw_cliente_produto_metricas": 22508
+    }
+  },
+  "servicos_criticos": [
+    "evonexus-dashboard",
+    "evonexus-ciss-postgres",
+    "evonexus-ciss-dashboard"
+  ],
+  "validacoes_minimas_pos_deploy": [
+    "Dashboard health container = healthy",
+    "HTTP 200 em /painel-vendas",
+    "HTTP 200 em /painel-clientes",
+    "HTTP 200 em /ciss-analytics",
+    "Contagens DW não zeradas para métricas de cliente"
+  ]
+}
+

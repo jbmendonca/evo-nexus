@@ -881,6 +881,9 @@ from routes.databases import bp as databases_bp
 from routes.plugins import bp as plugins_bp
 from routes.mcp_servers import bp as mcp_servers_bp
 from routes.plugin_public_pages import bp as plugin_public_pages_bp
+from routes.ciss_analytics import bp as ciss_analytics_bp
+from routes.ciss_sales import bp as ciss_sales_bp
+from routes.ciss_purchasing import bp as ciss_purchasing_bp
 
 # Brain Repo + Onboarding blueprints (loaded after routes are created)
 try:
@@ -958,6 +961,9 @@ app.register_blueprint(plugins_bp)
 app.register_blueprint(mcp_servers_bp)
 # B2.0: plugin public pages (unauthenticated, token-bound portals)
 app.register_blueprint(plugin_public_pages_bp)
+app.register_blueprint(ciss_analytics_bp)
+app.register_blueprint(ciss_sales_bp)
+app.register_blueprint(ciss_purchasing_bp)
 
 # --------------- Social Auth blueprints ---------------
 from auth.youtube import bp as youtube_auth_bp

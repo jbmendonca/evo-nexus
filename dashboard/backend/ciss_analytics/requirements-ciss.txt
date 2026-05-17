@@ -1,0 +1,6 @@
+# CISS Analytics — Dependências Python
+# Adicionar ao requirements.txt existente do EvoNexus
+
+requests>=2.31.0
+scikit-learn>=1.4.0
+numpy>=1.26.0

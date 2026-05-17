@@ -60,6 +60,8 @@ const KnowledgeApiKeys = lazyDefault(() => import('./pages/Knowledge/ApiKeys'))
 const NfeSeparator = lazyDefault(() => import('./pages/NfeSeparator'))
 const PdfNfExtractor = lazyDefault(() => import('./pages/PdfNfExtractor'))
 const ChatPage = lazyDefault(() => import('./pages/ChatPage'))
+const CissAnalytics = lazyDefault(() => import('./pages/CissAnalytics'))
+const PainelClientes = lazyDefault(() => import('./pages/PainelClientes'))
 
 function FullPageRoute({
   locationKey,
@@ -244,6 +246,8 @@ function AppContent() {
 
               <Route path="/" element={<Overview />} />
               <Route path="/workspace/*" element={<Workspace />} />
+              <Route path="/ciss-analytics" element={<CissAnalytics />} />
+              <Route path="/painel-clientes" element={<PainelClientes />} />
               <Route path="/agents" element={<Agents />} />
               <Route path="/agents/:name" element={<AgentDetail />} />
               <Route path="/routines" element={<Routines />} />
